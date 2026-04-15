@@ -2,8 +2,6 @@
 
 A custom Home Assistant Lovelace card that displays an animated energy flow over a custom SVG background. Energy values are shown as configurable pills with animated flow lines, and daily totals are displayed in a grid below.
 
-![Energy Flow Card](isometric.svg)
-
 ## Features
 
 - Animated SVG flow lines per energy source (positive & negative direction)
