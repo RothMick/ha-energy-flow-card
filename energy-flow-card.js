@@ -1,4 +1,4 @@
-// energy-flow-card.js  v1.19.1
+// energy-flow-card.js  v1.19.2
 
 // Constants
 const PILL_POSITIONS=[
@@ -296,35 +296,15 @@ class EnergyFlowCardEditor extends HTMLElement {
       gsForm.schema=this._gsSchema();
       gsForm.data={
         minmax_min_width:this._cfg.minmax_min_width||'',
-        flow_height:     this._cfg.flow_height||'',
-        gradient_day:    this._cfg.gradient_day||'',
-        gradient_night:  this._cfg.gradient_night||'',
+        flow_height:     this._cfg.flow_height     ||'265px',
+        gradient_day:    this._cfg.gradient_day    ||'linear-gradient(to bottom,#2A75F6 0%,#FFFFFF 67%,#D5D5D5 100%)',
+        gradient_night:  this._cfg.gradient_night  ||'linear-gradient(to bottom,#0A1929 0%,#1A2332 67%,#2C3440 100%)',
       };
       gsForm.computeLabel=s=>s.label??s.name;
-      const GS_TEXT=new Set(['minmax_min_width','flow_height','gradient_day','gradient_night']);
-      let gsPending=null;
-      const gsFlush=()=>{
-        if(!gsPending) return;
-        const d=gsPending; gsPending=null;
-        this._mainEditing=true;
-        this._fire(d);
-        this._mainEditing=false;
-      };
       gsForm.addEventListener('value-changed',ev=>{
-        const d={...this._cfg,...ev.detail.value};
-        const changedKeys=Object.keys(ev.detail.value).filter(k=>ev.detail.value[k]!==this._cfg[k]);
-        const onlyText=changedKeys.length>0&&changedKeys.every(k=>GS_TEXT.has(k));
-        if(onlyText){
-          gsPending=d;
-        }else{
-          gsPending=null;
-          this._mainEditing=true;
-          this._fire(d);
-          this._mainEditing=false;
-        }
-      });
-      gsForm.addEventListener('focusout',()=>{
-        setTimeout(()=>{if(gsPending&&this.shadowRoot.activeElement!==gsForm) gsFlush();},0);
+        this._mainEditing=true;
+        this._fire({...this._cfg,...ev.detail.value});
+        this._mainEditing=false;
       });
     }
 
@@ -826,4 +806,4 @@ class EnergyFlowCard extends HTMLElement {
 customElements.define('energy-flow-card',EnergyFlowCard);
 window.customCards=window.customCards||[];
 window.customCards.push({type:'energy-flow-card',name:'Energy Flow Card',description:'Animated energy flow with configurable energy value pills'});
-console.info('%c ENERGY-FLOW-CARD %c v1.19.1','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
+console.info('%c ENERGY-FLOW-CARD %c v1.19.2','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
