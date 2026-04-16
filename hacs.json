@@ -1,4 +1,6 @@
 {
   "name": "Energy Flow Card",
+  "content_in_root": false,
+  "filename": "energy-flow-card.js",
   "render_readme": true
 }
