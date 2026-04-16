@@ -1,4 +1,4 @@
-// energy-flow-card.js  v1.17.1
+// energy-flow-card.js  v1.18.0
 
 // Constants
 const PILL_POSITIONS=[
@@ -25,12 +25,9 @@ const PILL_POS_CSS={
 
 // Localization keys that match standard HA entities-card editor keys
 const _L={
-  entity:    'ui.panel.lovelace.editor.card.generic.entity',
-  label:     'ui.panel.lovelace.editor.card.generic.name',
-  icon:      'ui.panel.lovelace.editor.card.generic.icon',
-  add:       'ui.panel.lovelace.editor.card.entities.add',
-  move_up:   'ui.common.move_up',
-  move_down: 'ui.common.move_down',
+  entity: 'ui.panel.lovelace.editor.card.generic.entity',
+  label:  'ui.panel.lovelace.editor.card.generic.name',
+  icon:   'ui.panel.lovelace.editor.card.generic.icon',
 };
 
 class EnergyFlowCardEditor extends HTMLElement {
@@ -60,8 +57,6 @@ class EnergyFlowCardEditor extends HTMLElement {
     this._cfg={...cfg};
     this.dispatchEvent(new CustomEvent('config-changed',{detail:{config:this._cfg},bubbles:true,composed:true}));
   }
-
-  _loc(key,fallback){return this._hass?.localize(key)||fallback;}
 
   _render(){
     if(this._evEditIdx!==null) this._renderEvEdit();
@@ -446,7 +441,7 @@ class EnergyFlowCardEditor extends HTMLElement {
   // ── Daily Entities edit view ────────────────────────────────────────────────
   _renderEdit(){
     const sd=this.shadowRoot;
-    const e={entity:'',label:'',icon:'',color:'',secondary_entity:'',secondary_icon:'',...(this._cfg.daily_entities||[])[this._editIdx]};
+    const e={entity:'',label:'',icon:'',color:'',secondary_entity:'',secondary_icon:'',col_span:'1-col',...(this._cfg.daily_entities||[])[this._editIdx]};
     const yamlLbl=this._hass?.localize('ui.panel.lovelace.editor.edit_card.show_code_editor')||'Code Editor';
     const guiLbl =this._hass?.localize('ui.panel.lovelace.editor.edit_card.show_visual_editor')||'Visual Editor';
 
@@ -606,7 +601,7 @@ customElements.define('energy-flow-card-editor',EnergyFlowCardEditor);
 class EnergyFlowCard extends HTMLElement {
   static getConfigElement(){return document.createElement('energy-flow-card-editor');}
   static getStubConfig(){
-    return{svg_day:'',svg_night:'',mode:'day',entity_sun:'',energy_values:[],daily_entities:[]};
+    return{svg_day:'',svg_night:'',mode:'day',energy_values:[],daily_entities:[]};
   }
   constructor(){
     super();this.attachShadow({mode:'open'});
@@ -630,9 +625,11 @@ class EnergyFlowCard extends HTMLElement {
   _num(e,f=0){if(!e||!this._hass)return f;const v=parseFloat(this._hass.states[e]?.state);return isNaN(v)?f:v;}
   _fmtW(v){return Math.abs(v)>=1000?(v/1000).toFixed(2)+' kW':Math.round(v)+' W';}
   _fmtVal(eid){
-    const v=this._num(eid);
-    const unit=this._hass?.states[eid]?.attributes?.unit_of_measurement;
-    return v.toFixed(2)+(unit?' '+unit:'');
+    const raw=this._hass?.states[eid]?.state??'';
+    const num=parseFloat(raw);
+    const unit=this._hass?.states[eid]?.attributes?.unit_of_measurement||'';
+    const isFloat=!isNaN(num)&&raw.trim()!==''&&raw.includes('.')&&isFinite(Number(raw));
+    return isFloat?num.toFixed(2)+(unit?' '+unit:''):raw+(unit?' '+unit:'');
   }
   _set(id,t){const el=this.shadowRoot.getElementById(id);if(el&&el.textContent!==t)el.textContent=t;}
 
@@ -761,9 +758,12 @@ class EnergyFlowCard extends HTMLElement {
       this._getDailyEntities().forEach((e,i)=>{
         if(e.entity) this._set('de-'+i,this._fmtVal(e.entity));
         if(e.secondary_entity){
-          const sv=this._num(e.secondary_entity);
+          const raw=this._hass?.states[e.secondary_entity]?.state??'';
+          const num=parseFloat(raw);
           const su=e.secondary_no_unit?'':(this._hass?.states[e.secondary_entity]?.attributes?.unit_of_measurement||'');
-          this._set('ds-'+i,sv.toFixed(2)+(su?' '+su:''));
+          const isFloat=!isNaN(num)&&raw.trim()!==''&&raw.includes('.')&&isFinite(Number(raw));
+          const formatted=isFloat?num.toFixed(2)+(su?' '+su:''):raw+(su?' '+su:'');
+          this._set('ds-'+i,formatted);
         }
       });
     }
@@ -806,15 +806,15 @@ class EnergyFlowCard extends HTMLElement {
     '.lines .ln path{stroke-width:14;stroke-linecap:round;}'+
     '.daily{display:grid;grid-template-columns:repeat(auto-fill,minmax(max('+minW+',calc(50% - 4px)),1fr));gap:8px;padding:8px;transition:color .5s;}'+
     '.ep{border-radius:12px;padding:10px 14px;font-family:system-ui;display:flex;align-items:center;gap:10px;box-shadow:0 1px 4px rgba(0,0,0,.1);transition:background .3s;}'+
-    '.ed{display:flex;flex-direction:column;align-items:flex-start;min-width:0;}'+
-    '.el{font-size:11px;opacity:.75;line-height:1.3;}'+
-    '.er{display:flex;align-items:baseline;gap:6px;}'+
-    '.ev{font-size:16px;font-weight:700;margin-top:0;line-height:1.2;white-space:nowrap;}'+
-    '.esb{font-size:10px;opacity:.55;white-space:nowrap;}'
+    '.ed{display:flex;flex-direction:column;align-items:flex-start;flex:1;min-width:0;overflow:hidden;}'+
+    '.el{font-size:11px;opacity:.75;line-height:1.3;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'+
+    '.er{display:flex;align-items:baseline;gap:6px;overflow:hidden;}'+
+    '.ev{font-size:16px;font-weight:700;margin-top:0;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'+
+    '.esb{font-size:10px;opacity:.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
   );}
 }
 
 customElements.define('energy-flow-card',EnergyFlowCard);
 window.customCards=window.customCards||[];
 window.customCards.push({type:'energy-flow-card',name:'Energy Flow Card',description:'Animated energy flow with configurable energy value pills'});
-console.info('%c ENERGY-FLOW-CARD %c v1.17.1','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
+console.info('%c ENERGY-FLOW-CARD %c v1.18.0','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
