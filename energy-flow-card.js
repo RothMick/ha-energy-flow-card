@@ -1,4 +1,4 @@
-// energy-flow-card.js  v1.16.5
+// energy-flow-card.js  v1.17.1
 
 // Constants
 const PILL_POSITIONS=[
@@ -72,8 +72,7 @@ class EnergyFlowCardEditor extends HTMLElement {
   // ── Main view ───────────────────────────────────────────────────────────────
   _renderMain(){
     const sd=this.shadowRoot;
-
-
+    const genOpen=sd.getElementById('gen-settings-details')?.open||false;
 
     // ── Energy Values list ──
     const evEntries=this._cfg.energy_values||[];
@@ -138,7 +137,13 @@ class EnergyFlowCardEditor extends HTMLElement {
           <div class="elist">${deRows}</div>
         </ha-sortable>
         ${canAddDe?'<ha-entity-picker id="de-addpicker" add-button></ha-entity-picker>':''}
-      </div>`;
+      </div>
+      <details class="gen-settings" id="gen-settings-details">
+        <summary class="gen-settings-summary"><span>General Settings</span></summary>
+        <div class="section-body">
+          <ha-form id="gsf"></ha-form>
+        </div>
+      </details>`;
 
     // ── Global settings form ──
     const form=sd.getElementById('gf');
@@ -281,13 +286,51 @@ class EnergyFlowCardEditor extends HTMLElement {
         const arr=[...(this._cfg.daily_entities||[])];
         const stObj=this._hass?.states[val];
         const autoIcon=stObj?.attributes?.icon||'';
-        arr.push({entity:val,label:'',icon:autoIcon,color:'',secondary_entity:'',secondary_icon:''});
+        arr.push({entity:val,label:'',icon:autoIcon,color:'',secondary_entity:'',secondary_icon:'',col_span:'1-col'});
         this._cfg={...this._cfg,daily_entities:arr};
         this._editIdx=arr.length-1;
         deAddPicker.value='';
         this._render();
       });
     }
+
+    // ── General Settings form ──
+    const gsForm=sd.getElementById('gsf');
+    if(gsForm){
+      gsForm.hass=this._hass;
+      gsForm.schema=this._gsSchema();
+      gsForm.data={minmax_min_width:this._cfg.minmax_min_width||''};
+      gsForm.computeLabel=s=>s.label??s.name;
+      const GS_TEXT=new Set(['minmax_min_width']);
+      let gsPending=null;
+      const gsFlush=()=>{
+        if(!gsPending) return;
+        const d=gsPending; gsPending=null;
+        this._mainEditing=true;
+        this._fire(d);
+        this._mainEditing=false;
+      };
+      gsForm.addEventListener('value-changed',ev=>{
+        const d={...this._cfg,...ev.detail.value};
+        const changedKeys=Object.keys(ev.detail.value).filter(k=>ev.detail.value[k]!==this._cfg[k]);
+        const onlyText=changedKeys.length>0&&changedKeys.every(k=>GS_TEXT.has(k));
+        if(onlyText){
+          gsPending=d;
+        }else{
+          gsPending=null;
+          this._mainEditing=true;
+          this._fire(d);
+          this._mainEditing=false;
+        }
+      });
+      gsForm.addEventListener('focusout',()=>{
+        setTimeout(()=>{if(gsPending&&this.shadowRoot.activeElement!==gsForm) gsFlush();},0);
+      });
+    }
+
+    // Restore open state of General Settings details
+    const genDetails=sd.getElementById('gen-settings-details');
+    if(genDetails&&genOpen) genDetails.open=true;
   }
 
   // ── Energy Values edit view ─────────────────────────────────────────────────
@@ -508,6 +551,16 @@ class EnergyFlowCardEditor extends HTMLElement {
       {name:'secondary_entity', label:'Additional Entity (Optional)',selector:{entity:{}}},
       {name:'secondary_icon',   label:'Additional Entity Symbol',  selector:{icon:{}}},
       {name:'secondary_no_unit',label:'Additional Entity No Unit', selector:{boolean:{}}},
+      {name:'col_span',         label:'Width',                     selector:{select:{options:[
+        {value:'1-col',label:'Half Width (1 Column)'},
+        {value:'2-col',label:'Full Width (2 Columns)'},
+      ]}}},
+    ];
+  }
+
+  _gsSchema(){
+    return[
+      {name:'minmax_min_width',label:'Grid Breakpoint (e.g. 175px)',selector:{text:{}}},
     ];
   }
 
@@ -536,7 +589,14 @@ ha-entity-picker{display:block;margin-top:20px}
 .back-title{display:flex;align-items:center;gap:4px;font-size:var(--ha-font-size-l,1.1em);font-weight:500;}
 .flow-heading-row{display:flex;align-items:center;gap:8px;margin:16px 0 4px;}
 .flow-heading{margin:0;font-size:var(--ha-font-size-l,1em);font-weight:500;color:var(--primary-text-color);}
-.color-swatch{display:inline-block;width:18px;height:18px;border-radius:4px;border:1px solid var(--divider-color,rgba(128,128,128,.4));flex-shrink:0;background-image:linear-gradient(45deg,#aaa 25%,transparent 25%,transparent 75%,#aaa 75%),linear-gradient(45deg,#aaa 25%,#fff 25%,#fff 75%,#aaa 75%);background-size:6px 6px;background-position:0 0,3px 3px;}`;
+.color-swatch{display:inline-block;width:18px;height:18px;border-radius:4px;border:1px solid var(--divider-color,rgba(128,128,128,.4));flex-shrink:0;background-image:linear-gradient(45deg,#aaa 25%,transparent 25%,transparent 75%,#aaa 75%),linear-gradient(45deg,#aaa 25%,#fff 25%,#fff 75%,#aaa 75%);background-size:6px 6px;background-position:0 0,3px 3px;}
+details.gen-settings{margin-top:28px;}
+details.gen-settings>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;padding:4px 0;user-select:none;}
+details.gen-settings>summary::-webkit-details-marker{display:none;}
+details.gen-settings>summary::before{content:"▶";font-size:10px;color:var(--secondary-text-color);transition:transform .2s;flex-shrink:0;}
+details[open].gen-settings>summary::before{transform:rotate(90deg);}
+.gen-settings-summary span{font-size:var(--ha-font-size-l,1em);font-weight:500;color:var(--primary-text-color);}
+details.gen-settings .section-body{padding-top:8px;}`;
   }
 }
 
@@ -626,6 +686,7 @@ class EnergyFlowCard extends HTMLElement {
       const label=e.label||e.entity||'';
       const color=e.color||'';
       const showSub=!!e.secondary_entity;
+      const col2=e.col_span==='2-col';
       const vid='de-'+i, sid='ds-'+i;
       let inner;
       if(showSub){
@@ -639,11 +700,12 @@ class EnergyFlowCard extends HTMLElement {
       }else{
         inner='<span class="ev" id="'+vid+'">\u2013</span>';
       }
-      return'<div class="ep">'+
+      return'<div class="ep"'+(col2?' style="grid-column:1/-1"':'')+'>'+
         '<ha-icon icon="'+icon+'" style="--mdc-icon-size:22px;color:'+color+';flex-shrink:0"></ha-icon>'+
         '<div class="ed"><span class="el">'+label+'</span>'+inner+'</div></div>';
     }).join('');
-    const spacer=entities.length%2===1?'<div class="ep ep-sp" style="visibility:hidden"></div>':'';
+    const oneColCount=entities.filter(e=>e.col_span!=='2-col').length;
+    const spacer=oneColCount%2===1?'<div class="ep ep-sp" style="visibility:hidden"></div>':'';
     return'<div class="daily" id="daily">'+rows+spacer+'</div>';
   }
 
@@ -680,7 +742,7 @@ class EnergyFlowCard extends HTMLElement {
       if(on(val)){
         const color=val>=0?e.color_positive:(e.color_negative||e.color_positive||'');
         const delay=val>=0?(e.delay_positive||''):(e.delay_negative||'');
-        animCss+=this._dot('lev'+i,color,'ev'+i,delay);
+        animCss+=this._dot('lev'+i,color,'ev'+i,delay,dir);
       }else{
         animCss+='.lines .lev'+i+' path{stroke:transparent;animation:none;}';
       }
@@ -707,9 +769,9 @@ class EnergyFlowCard extends HTMLElement {
     }
   }
 
-  _dot(cls,color,fid,delay){
+  _dot(cls,color,fid,delay,dir=''){
     if(!color) return'.lines .'+cls+' path{stroke:transparent;animation:none;}';
-    const d=20,t=[200,300,400,480,560,640,720,800,880],gap=2000,tot=d+t[8]+gap,sp='3s',kf='kf'+cls.replace(/\W/g,'');
+    const d=20,t=[200,300,400,480,560,640,720,800,880],gap=2000,tot=d+t[8]+gap,sp='3s',kf='kf'+cls.replace(/\W/g,'')+dir;
     const op=[.85,.7,.6,.5,.4,.3,.22,.15,.08],sw=[8.5,8,7.5,7,6.6,6,5.5,5,4.5];
     let r='@keyframes '+kf+'{to{stroke-dashoffset:'+tot+';}}';
     r+='.lines .'+cls+' .p0{stroke:'+color+';stroke-width:9;stroke-linecap:round;stroke-dasharray:'+d+' '+(tot-d)+';opacity:1;filter:url(#glow_'+fid+'_b);animation:'+kf+' '+sp+' linear infinite;animation-delay:'+delay+';}';
@@ -726,7 +788,9 @@ class EnergyFlowCard extends HTMLElement {
     return'<defs>'+ev.map((_,i)=>g('ev'+i,[12,22,35])+g('ev'+i+'_b',[15,30,50])).join('')+'</defs>';
   }
 
-  _css(){return(
+  _css(){
+    const minW=this._cfg.minmax_min_width||'175px';
+    return(
     ':host{display:block;}'+
     'ha-card{overflow:hidden;border-radius:16px;padding:0;border:none;box-shadow:none;transition:background 1s ease;}'+
     '.wrap{width:100%;}'+
@@ -740,7 +804,7 @@ class EnergyFlowCard extends HTMLElement {
     '.pt{display:block;font-size:12px;opacity:.8;line-height:1.3;}'+
     '.pv{display:block;font-size:18px;font-weight:700;line-height:1.2;margin-top:2px;}'+
     '.lines .ln path{stroke-width:14;stroke-linecap:round;}'+
-    '.daily{display:grid;grid-template-columns:repeat(auto-fill,minmax(max(180px,calc(50% - 4px)),1fr));gap:8px;padding:8px;transition:color .5s;}'+
+    '.daily{display:grid;grid-template-columns:repeat(auto-fill,minmax(max('+minW+',calc(50% - 4px)),1fr));gap:8px;padding:8px;transition:color .5s;}'+
     '.ep{border-radius:12px;padding:10px 14px;font-family:system-ui;display:flex;align-items:center;gap:10px;box-shadow:0 1px 4px rgba(0,0,0,.1);transition:background .3s;}'+
     '.ed{display:flex;flex-direction:column;align-items:flex-start;min-width:0;}'+
     '.el{font-size:11px;opacity:.75;line-height:1.3;}'+
@@ -753,4 +817,4 @@ class EnergyFlowCard extends HTMLElement {
 customElements.define('energy-flow-card',EnergyFlowCard);
 window.customCards=window.customCards||[];
 window.customCards.push({type:'energy-flow-card',name:'Energy Flow Card',description:'Animated energy flow with configurable energy value pills'});
-console.info('%c ENERGY-FLOW-CARD %c v1.16.4','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
+console.info('%c ENERGY-FLOW-CARD %c v1.17.1','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
