@@ -34,7 +34,7 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 
 1. Copy `energy-flow-card.js`, `isometric.svg` and `isometric_night.svg` into `/config/www/energyflow/` on your Home Assistant instance
 2. Go to **Settings → Dashboards → ⋮ → Resources → Add**
-3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.17.0` and type to **JavaScript module**
+3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.18.0` and type to **JavaScript module**
 4. Reload your browser
 
 ---
