@@ -177,7 +177,7 @@ daily_entities:
 |---|---|---|
 | `entity` | entity | Sensor entity for the daily value |
 | `label` | string | Display label (leave empty to use friendly name) |
-| `icon` | string | icon (e.g. `mdi:solar-power`) |
+| `icon` | string | Icon (e.g. `mdi:solar-power`). If omitted, the entity's own icon is used automatically |
 | `color` | string | Icon color (hex) |
 | `secondary_entity` | entity | Optional second value shown small beside the main value |
 | `secondary_icon` | string | Icon for the secondary value |
