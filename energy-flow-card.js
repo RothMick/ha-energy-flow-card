@@ -1,4 +1,4 @@
-// energy-flow-card.js  v1.19.3
+// energy-flow-card.js  v1.19.4
 
 // Constants
 const PILL_POSITIONS=[
@@ -103,7 +103,7 @@ class EnergyFlowCardEditor extends HTMLElement {
     // ── Daily Entities list ──
     const dailyEntities=this._cfg.daily_entities||[];
     const deRows=dailyEntities.map((e,i)=>{
-      const icon=e.icon||'mdi:circle';
+      const icon=e.icon||(this._hass?.states[e.entity]?.attributes?.icon)||'mdi:circle';
       const color=e.color||'';
       const stObj=this._hass?.states[e.entity];
       const name=e.label||(stObj?.attributes?.friendly_name)||e.entity||'…';
@@ -686,7 +686,7 @@ class EnergyFlowCard extends HTMLElement {
   _dailyH(){
     const entities=this._getDailyEntities();
     const rows=entities.map((e,i)=>{
-      const icon=e.icon||'mdi:circle';
+      const icon=e.icon||(this._hass?.states[e.entity]?.attributes?.icon)||'mdi:circle';
       const label=e.label||e.entity||'';
       const color=e.color||'';
       const showSub=!!e.secondary_entity;
@@ -825,4 +825,4 @@ class EnergyFlowCard extends HTMLElement {
 customElements.define('energy-flow-card',EnergyFlowCard);
 window.customCards=window.customCards||[];
 window.customCards.push({type:'energy-flow-card',name:'Energy Flow Card',description:'Animated energy flow with configurable energy value pills'});
-console.info('%c ENERGY-FLOW-CARD %c v1.19.3','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
+console.info('%c ENERGY-FLOW-CARD %c v1.19.4','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
