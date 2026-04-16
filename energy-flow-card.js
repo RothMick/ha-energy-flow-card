@@ -1,4 +1,4 @@
-// energy-flow-card.js  v1.19.2
+// energy-flow-card.js  v1.19.3
 
 // Constants
 const PILL_POSITIONS=[
@@ -36,11 +36,19 @@ class EnergyFlowCardEditor extends HTMLElement {
     this.attachShadow({mode:'open'});
     this._cfg={};
     this._hass=null;
-    this._editIdx=null;    // daily entities edit index
+    this._editIdx=null;
     this._yamlMode=false;
-    this._evEditIdx=null;  // energy values edit index
+    this._evEditIdx=null;
     this._evYamlMode=false;
     this._mainEditing=false;
+    this._gsPending=null;
+  }
+
+  disconnectedCallback(){
+    if(this._gsPending){
+      this._fire(this._gsPending);
+      this._gsPending=null;
+    }
   }
 
   set hass(h){
@@ -295,17 +303,28 @@ class EnergyFlowCardEditor extends HTMLElement {
       gsForm.hass=this._hass;
       gsForm.schema=this._gsSchema();
       gsForm.data={
-        minmax_min_width:this._cfg.minmax_min_width||'',
+        minmax_min_width:this._cfg.minmax_min_width||'175px',
         flow_height:     this._cfg.flow_height     ||'265px',
         gradient_day:    this._cfg.gradient_day    ||'linear-gradient(to bottom,#2A75F6 0%,#FFFFFF 67%,#D5D5D5 100%)',
         gradient_night:  this._cfg.gradient_night  ||'linear-gradient(to bottom,#0A1929 0%,#1A2332 67%,#2C3440 100%)',
       };
       gsForm.computeLabel=s=>s.label??s.name;
-      gsForm.addEventListener('value-changed',ev=>{
+
+      const gsFlush=()=>{
+        if(!this._gsPending) return;
+        const d=this._gsPending; this._gsPending=null;
         this._mainEditing=true;
-        this._fire({...this._cfg,...ev.detail.value});
+        this._fire(d);
         this._mainEditing=false;
+      };
+      gsForm.addEventListener('value-changed',ev=>{
+        this._gsPending={...this._cfg,...ev.detail.value};
       });
+      gsForm.addEventListener('focusout',()=>{
+        setTimeout(()=>{if(this._gsPending&&this.shadowRoot.activeElement!==gsForm) gsFlush();},0);
+      });
+      const genDetails=sd.getElementById('gen-settings-details');
+      genDetails.addEventListener('toggle',()=>{if(!genDetails.open) gsFlush();});
     }
 
     // Restore open state of General Settings details
@@ -806,4 +825,4 @@ class EnergyFlowCard extends HTMLElement {
 customElements.define('energy-flow-card',EnergyFlowCard);
 window.customCards=window.customCards||[];
 window.customCards.push({type:'energy-flow-card',name:'Energy Flow Card',description:'Animated energy flow with configurable energy value pills'});
-console.info('%c ENERGY-FLOW-CARD %c v1.19.2','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
+console.info('%c ENERGY-FLOW-CARD %c v1.19.3','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
