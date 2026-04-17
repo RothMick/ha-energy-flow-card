@@ -1,4 +1,4 @@
-// energy-flow-card.js  v1.19.5
+// energy-flow-card.js  v1.20.0
 
 // Constants
 const PILL_POSITIONS=[
@@ -313,8 +313,11 @@ class EnergyFlowCardEditor extends HTMLElement {
       gsForm.data={
         minmax_min_width:this._cfg.minmax_min_width||'175px',
         flow_height:     this._cfg.flow_height     ||'265px',
+        svg_height:      this._cfg.svg_height      ||'',
         gradient_day:    this._cfg.gradient_day    ||'linear-gradient(to bottom,#2A75F6 0%,#FFFFFF 67%,#D5D5D5 100%)',
         gradient_night:  this._cfg.gradient_night  ||'linear-gradient(to bottom,#0A1929 0%,#1A2332 67%,#2C3440 100%)',
+        viewbox_width:   this._cfg.viewbox_width   ||'1676',
+        viewbox_height:  this._cfg.viewbox_height  ||'2058',
       };
       gsForm.computeLabel=s=>s.label??s.name;
 
@@ -344,7 +347,7 @@ class EnergyFlowCardEditor extends HTMLElement {
   _renderEvEdit(){
     const sd=this.shadowRoot;
     const evEntries=this._cfg.energy_values||[];
-    const e={entity:'',position:'',label:'',color_positive:'',path_positive:'',color_negative:'',path_negative:'',delay_positive:'',delay_negative:'',...evEntries[this._evEditIdx]};
+    const e={entity:'',position:'',label:'',hide_value:false,color_positive:'',path_positive:'',color_negative:'',path_negative:'',delay_positive:'',delay_negative:'',...evEntries[this._evEditIdx]};
     const usedPos=evEntries.map((ev2,i2)=>i2!==this._evEditIdx?ev2.position:'').filter(Boolean);
     const yamlLbl=this._hass?.localize('ui.panel.lovelace.editor.edit_card.show_code_editor')||'Code Editor';
     const guiLbl =this._hass?.localize('ui.panel.lovelace.editor.edit_card.show_visual_editor')||'Visual Editor';
@@ -407,7 +410,7 @@ class EnergyFlowCardEditor extends HTMLElement {
       if(formBase){
         formBase.hass=this._hass;
         formBase.schema=this._evSchemaBase(usedPos, e.position);
-        formBase.data={entity:e.entity,position:e.position,label:e.label};
+        formBase.data={entity:e.entity,position:e.position,label:e.label,hide_value:e.hide_value||false};
         formBase.computeLabel=s=>{
           const generic=this._hass?.localize(`ui.panel.lovelace.editor.card.generic.${s.name}`);
           if(generic) return generic;
@@ -532,6 +535,7 @@ class EnergyFlowCardEditor extends HTMLElement {
         PILL_POSITIONS.map(p=>({value:p.value,label:p.label,disabled:p.value!==currentPos&&usedPositions.includes(p.value)}))
       }}},
       {name:'label', selector:{entity_name:{}}, context:{entity:'entity'}},
+      {name:'hide_value', label:'Hide Value', selector:{boolean:{}}},
     ];
   }
   _evSchemaPos(){
@@ -569,8 +573,11 @@ class EnergyFlowCardEditor extends HTMLElement {
     return[
       {name:'minmax_min_width',label:'Grid Breakpoint (e.g. 175px)',                                              selector:{text:{}}},
       {name:'flow_height',     label:'Flow Area Height (e.g. 265px)',                                             selector:{text:{}}},
+      {name:'svg_height',      label:'SVG Height, centered (e.g. 220px, leave empty to fill)',                   selector:{text:{}}},
       {name:'gradient_day',    label:'Background Gradient Day (e.g. linear-gradient(to bottom,#2A75F6 0%,...))',  selector:{text:{}}},
       {name:'gradient_night',  label:'Background Gradient Night (e.g. linear-gradient(to bottom,#0A1929 0%,...))',selector:{text:{}}},
+      {name:'viewbox_width',   label:'SVG ViewBox Width (e.g. 1676)',                                             selector:{text:{}}},
+      {name:'viewbox_height',  label:'SVG ViewBox Height (e.g. 2058)',                                            selector:{text:{}}},
     ];
   }
 
@@ -657,6 +664,7 @@ class EnergyFlowCard extends HTMLElement {
 
     // Generate pills
     const pills=ev.map((e,i)=>{
+      if(e.hide_value) return '';
       const pos=PILL_POS_CSS[e.position||'top-left']||'left:12px;top:12px;';
       return`<div class="pill" id="pill-ev-${i}" style="${pos}">
         <span class="pt">${e.label||''}</span>
@@ -669,7 +677,7 @@ class EnergyFlowCard extends HTMLElement {
       '<ha-card id="card"><div class="wrap">'+
         '<div class="flow">'+
           '<img id="bg" class="bg">'+
-          '<svg class="lines" viewBox="0 0 1676 2058" preserveAspectRatio="xMidYMid meet">'+
+          '<svg class="lines" viewBox="0 0 '+(this._cfg.viewbox_width||'1676')+' '+(this._cfg.viewbox_height||'2058')+'" preserveAspectRatio="xMidYMid meet">'+
             this._defs(ev)+pathGroups+
           '</svg>'+
           '<div class="pills">'+pills+'</div>'+
@@ -812,13 +820,18 @@ class EnergyFlowCard extends HTMLElement {
   _css(){
     const minW=this._cfg.minmax_min_width||'175px';
     const fh=this._cfg.flow_height||'265px';
+    const sh=this._cfg.svg_height||'';
+    const mediaStyle=sh
+      ?'.bg{position:absolute;left:15px;right:15px;width:calc(100% - 30px);height:'+sh+';top:50%;transform:translateY(-50%);object-fit:contain;}'+
+        '.lines{position:absolute;left:15px;right:15px;width:calc(100% - 30px);height:'+sh+';top:50%;transform:translateY(-50%);}'
+      :'.bg{position:absolute;inset:10px 15px 5px 15px;width:calc(100% - 30px);height:calc(100% - 15px);object-fit:contain;}'+
+        '.lines{position:absolute;inset:10px 15px 5px 15px;width:calc(100% - 30px);height:calc(100% - 15px);}';
     return(
     ':host{display:block;}'+
     'ha-card{overflow:hidden;border-radius:16px;padding:0;border:none;box-shadow:none;transition:background 1s ease;}'+
     '.wrap{width:100%;}'+
     '.flow{position:relative;width:100%;height:'+fh+';overflow:hidden;}'+
-    '.bg{position:absolute;inset:10px 15px 5px 15px;width:calc(100% - 30px);height:calc(100% - 15px);object-fit:contain;}'+
-    '.lines{position:absolute;inset:10px 15px 5px 15px;width:calc(100% - 30px);height:calc(100% - 15px);}'+
+    mediaStyle+
     '.pills{position:absolute;inset:0;pointer-events:none;z-index:2;}'+
     '.pill{position:absolute;background:rgba(0,0,0,.35);backdrop-filter:blur(6px);border-radius:12px;padding:12px 14px;color:white;font-family:system-ui;pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent;}'+
     '.pill:hover{background:rgba(0,0,0,.55);}'+
@@ -839,4 +852,4 @@ class EnergyFlowCard extends HTMLElement {
 customElements.define('energy-flow-card',EnergyFlowCard);
 window.customCards=window.customCards||[];
 window.customCards.push({type:'energy-flow-card',name:'Energy Flow Card',description:'Animated energy flow with configurable energy value pills'});
-console.info('%c ENERGY-FLOW-CARD %c v1.19.5','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
+console.info('%c ENERGY-FLOW-CARD %c v1.20.0','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');

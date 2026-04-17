@@ -4,12 +4,15 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 
 <img width="1090" height="468" alt="preview" src="https://github.com/user-attachments/assets/750df14f-44b0-4750-b282-6887e4cdd46a" />
 
+
 <a href="[buymeacoffee.com/RothMick](https://buymeacoffee.com/rothmick)"><img width="217" height="50" alt="default-orange" src="https://github.com/user-attachments/assets/0da5dedd-5879-4b2a-9131-cd0ebd751547" /></a>
+
 
 ## Features
 
 - Animated SVG flow lines per energy source (positive & negative direction)
 - Up to 8 configurable energy value pills in a 3×3 grid
+- Only SVG flow also possible
 - Up to 10 daily entity values with optional secondary entity
 - Per-entity column width: half width (1-col) or full tile width (2-col)
 - Configurable grid breakpoint that controls the 2-column → 1-column layout switch
@@ -34,7 +37,7 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 
 1. Copy `energy-flow-card.js`, `isometric.svg` and `isometric_night.svg` into `/config/www/energyflow/` on your Home Assistant instance
 2. Go to **Settings → Dashboards → ⋮ → Resources → Add**
-3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.19.5` and type to **JavaScript module**
+3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.20.0` and type to **JavaScript module**
 4. Reload your browser
 
 ---
@@ -154,8 +157,11 @@ daily_entities:
 | `daily_entities` | list | `[]` | Daily total values shown below the SVG (see below) |
 | `minmax_min_width` | string | `175px` | Minimum tile width before the grid collapses from 2 columns to 1 (e.g. `175px`, `200px`, `50%`) |
 | `flow_height` | string | `265px` | Height of the SVG flow area (e.g. `265px`, `300px`) |
+| `svg_height` | string | | Fixed height for the SVG and background image. When set, both are centered vertically within the flow area. Leave empty to fill the full flow height (e.g. `220px`) |
 | `gradient_day` | string | `linear-gradient(to bottom,#2A75F6 0%,#FFFFFF 67%,#D5D5D5 100%)` | CSS background gradient for day mode |
 | `gradient_night` | string | `linear-gradient(to bottom,#0A1929 0%,#1A2332 67%,#2C3440 100%)` | CSS background gradient for night mode |
+| `viewbox_width` | string | `1676` | SVG viewBox width — only change when using a custom SVG with different dimensions |
+| `viewbox_height` | string | `2058` | SVG viewBox height — only change when using a custom SVG with different dimensions |
 
 ### `energy_values` entry
 
@@ -164,6 +170,7 @@ daily_entities:
 | `entity` | entity | Sensor entity to read the value from |
 | `position` | string | Pill position: `top-left`, `top-center`, `top-right`, `middle-left`, `middle-right`, `bottom-left`, `bottom-center`, `bottom-right` |
 | `label` | string | Label shown above the value in the pill |
+| `hide_value` | boolean | `false` | Hide the pill entirely (flow animation still runs) |
 | `color_positive` | string | Hex color for positive flow animation (e.g. `#64B7F6`) |
 | `path_positive` | string | SVG path `d` attribute for positive flow direction |
 | `delay_positive` | string | CSS animation delay for positive flow (e.g. `0s`, `-0.8s`) |
@@ -190,12 +197,12 @@ daily_entities:
 
 The flow animation follows SVG `path` elements. To get the correct paths for your own SVG:
 
-1. Open your SVG in a vector editor (e.g. Inkscape or Figma)
+1. Draw your isomisometric SVT (e.g. affinity studio, Figma)
 2. Trace the desired flow line as a path
 3. Copy the `d` attribute value
 4. Paste it into `path_positive` / `path_negative` in the card config (a negative path is the positive version but from last to first point)
 
-The SVG viewBox used in this card is `0 0 1676 2058`.
+The default SVG viewBox is `0 0 1676 2058`. If your SVG has different dimensions, set `viewbox_width` and `viewbox_height` in General Settings accordingly.
 
 ---
 
