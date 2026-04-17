@@ -4,10 +4,6 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 
 <img width="1090" height="468" alt="preview" src="https://github.com/user-attachments/assets/750df14f-44b0-4750-b282-6887e4cdd46a" />
 
-
-<a href="[buymeacoffee.com/RothMick](https://buymeacoffee.com/rothmick)"><img width="217" height="50" alt="default-orange" src="https://github.com/user-attachments/assets/0da5dedd-5879-4b2a-9131-cd0ebd751547" /></a>
-
-
 ## Features
 
 - Animated SVG flow lines per energy source (positive & negative direction)
@@ -153,22 +149,16 @@ daily_entities:
 | `svg_night` | string | | Path to the SVG background for nighttime |
 | `mode` | `auto` / `day` / `night` | `day` | Display mode. `auto` switches based on `entity_sun` |
 | `entity_sun` | entity | | Any entity whose state is `below_horizon` for night detection |
-| `energy_values` | list | `[]` | Animated energy pills (see below) |
+| `energy_values` | list | `[]` | Up to 8 energy pills including energy flow animations (see below) |
 | `daily_entities` | list | `[]` | Daily total values shown below the SVG (see below) |
-| `minmax_min_width` | string | `175px` | Minimum tile width before the grid collapses from 2 columns to 1 (e.g. `175px`, `200px`, `50%`) |
-| `flow_height` | string | `265px` | Height of the SVG flow area (e.g. `265px`, `300px`) |
-| `svg_height` | string | | Fixed height for the SVG and background image. When set, both are centered vertically within the flow area. Leave empty to fill the full flow height (e.g. `220px`) |
-| `gradient_day` | string | `linear-gradient(to bottom,#2A75F6 0%,#FFFFFF 67%,#D5D5D5 100%)` | CSS background gradient for day mode |
-| `gradient_night` | string | `linear-gradient(to bottom,#0A1929 0%,#1A2332 67%,#2C3440 100%)` | CSS background gradient for night mode |
-| `viewbox_width` | string | `1676` | SVG viewBox width — only change when using a custom SVG with different dimensions |
-| `viewbox_height` | string | `2058` | SVG viewBox height — only change when using a custom SVG with different dimensions |
+| `general settings` | additional hidden settings | `[]` | Basic settings (see below) |
 
 ### `energy_values` entry
 
 | Option | Type | Description |
 |---|---|---|
 | `entity` | entity | Sensor entity to read the value from |
-| `position` | string | Pill position: `top-left`, `top-center`, `top-right`, `middle-left`, `middle-right`, `bottom-left`, `bottom-center`, `bottom-right` |
+| `position` | string | Pill position: `top-left`, `top-center`, `top-right`, `middle-left`, `middle-right`, `bottom-left`, `bottom-center`, `bottom-right` You can select each postion only once. So choose wisely. |
 | `label` | string | Label shown above the value in the pill |
 | `hide_value` | boolean | `false` | Hide the pill entirely (flow animation still runs) |
 | `color_positive` | string | Hex color for positive flow animation (e.g. `#64B7F6`) |
@@ -191,6 +181,18 @@ daily_entities:
 | `secondary_no_unit` | boolean | Hide the unit of the secondary value |
 | `col_span` | `1-col` / `2-col` | `1-col` | `1-col` places the tile in one grid column; `2-col` stretches it across the full card width |
 
+### general settings
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `minmax_min_width` | string | `175px` | Minimum tile width before the grid collapses from 2 columns to 1 (e.g. `175px`, `200px`, `50%`) |
+| `flow_height` | string | `265px` | Height of the SVG flow area, this changes also the height of the card (e.g. `265px`, `300px`) |
+| `svg_height` | string | | Fixed height for the SVG, background image and energy flows. When set, both are centered vertically within the flow area. Leave empty to fill the full flow height (e.g. `220px`) |
+| `gradient_day` | string | `linear-gradient(to bottom,#2A75F6 0%,#FFFFFF 67%,#D5D5D5 100%)` | CSS background gradient for day mode |
+| `gradient_night` | string | `linear-gradient(to bottom,#0A1929 0%,#1A2332 67%,#2C3440 100%)` | CSS background gradient for night mode |
+| `viewbox_width` | string | `1676` | SVG viewBox width — change when using a custom SVG with different dimensions. |
+| `viewbox_height` | string | `2058` | SVG viewBox height — change when using a custom SVG with different dimensions |
+
 ---
 
 ## SVG paths
@@ -204,8 +206,90 @@ The flow animation follows SVG `path` elements. To get the correct paths for you
 
 The default SVG viewBox is `0 0 1676 2058`. If your SVG has different dimensions, set `viewbox_width` and `viewbox_height` in General Settings accordingly.
 
+
+# SVG Path Extraction – HINTS
+
+These hints apply when extracting paths from SVG files to use as animation paths in your energy flow visualizations.
+
+---
+
+## Filled Areas vs. Stroke Paths
+
+Some paths in an SVG define **filled areas** (closed shapes rendered with `fill`) rather than lines. If you need to use these as animation routes, you need to **convert the filled area path into a true centerline stroke path** — that is, trace the visual midline of the filled shape and use it with a `stroke` and an appropriate `stroke-width`, instead of the original outline that merely encloses a filled region.
+
+---
+
+## Absolute vs. Relative Coordinates
+
+SVG path commands come in two variants: **uppercase = absolute**, **lowercase = relative**.
+
+| Command | Meaning |
+|---|---|
+| `M 100 200` | Move to absolute position (100, 200) |
+| `m 10 20` | Move *by* (10, 20) relative to current position |
+| `L`, `H`, `V`, `C`, `Q`, `A` | Absolute line/curve commands |
+| `l`, `h`, `v`, `c`, `q`, `a` | Relative versions of the above |
+
+**All path coordinates must be absolute** before use in energy flow animations. Relative commands depend on the current pen position at runtime, which makes path length calculations, progress interpolation, and comet-trail animations unreliable or incorrect.
+
+> **How to convert:** Use [Inkscape](https://inkscape.org/) via *Extensions → Generate from Path → Flatten Beziers*, then export as plain SVG — or use an online SVG path converter to normalize all commands to their absolute equivalents.
+
+---
+
+## ViewBox Normalization
+
+All SVGs used as sources should share a **consistent `viewBox`** (e.g. `0 0 1000 1000`). Mixing different viewBox dimensions across icons or layout elements leads to misaligned paths when they are composited into a single animation canvas.
+
+If you are extracting a path from an SVG with a different viewBox, you need to **scale the coordinates** to match the target viewBox before use. Inkscape's *Transform* dialog or a script-based approach (multiplying all coordinates by a scale factor) can handle this.
+
+---
+
+## Bezier Curves and Path Simplification
+
+Complex paths exported from design tools often contain many redundant anchor points or unnecessary Bezier curves. This can cause:
+
+- Slower `getTotalLength()` / `getPointAtLength()` performance in the browser
+- Uneven comet spacing along curved segments
+- Harder manual editing
+
+Before using a path in an animation, consider **simplifying it** in Inkscape via *Path → Simplify*. Aim for the fewest anchor points that still accurately represent the visual shape.
+
+---
+
+## Stroke Line Caps and Joins
+
+When defining animation route paths, set explicit values for the following attributes:
+
+| Attribute | Recommended value | Reason |
+|---|---|---|
+| `stroke-linecap` | `round` | Smooth comet head/tail at endpoints |
+| `stroke-linejoin` | `round` | No sharp spikes at direction changes |
+| `stroke-width` | match visual design | Consistent with surrounding UI elements |
+
+> These attributes have no effect on the animation math itself (which uses path geometry only), but matter for any visible guide lines or debug overlays rendered during development.
+
+---
+
+## Path Direction and Animation Start Point
+
+The direction a comet travels along a path is determined by the **draw direction** of the path — i.e. where the path starts (`M`) and which way the coordinates proceed.
+
+- If a comet animates in the **wrong direction**, reverse the path rather than inverting the animation logic.
+- The starting point (`M x y`) defines where the comet appears at progress `0`.
+- For **bidirectional flows** (e.g. grid import vs. export), maintain two separate reversed copies of the same path. Lazy way: Usa an AI tools, and let it rewrite reversed version of the path and to re-calculate the bezier curves.
+
+---
+
+## Compound Paths and Subpaths
+
+Some SVG exports produce **compound paths** — a single `<path>` element containing multiple subpaths, separated by additional `M` (or `m`) commands mid-string. Energy flow animation logic typically expects **one continuous path per route**.
+
+If your source path contains multiple subpaths, split them into individual `<path>` elements before use, or ensure your animation code explicitly handles the subpath you intend to animate.
+
 ---
 
 ## License
 
 MIT
+
+<a href="[buymeacoffee.com/RothMick](https://buymeacoffee.com/rothmick)"><img width="217" height="50" alt="default-orange" src="https://github.com/user-attachments/assets/0da5dedd-5879-4b2a-9131-cd0ebd751547" /></a>
