@@ -28,6 +28,7 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 3. Add this repository URL and select type **Lovelace**
 4. Click **Install**
 5. Reload your browser
+6. Use settings from example below to start
 
 ### Option B — Manual
 
@@ -35,6 +36,7 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 2. Go to **Settings → Dashboards → ⋮ → Resources → Add**
 3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.20.0` and type to **JavaScript module**
 4. Reload your browser
+5. Use settings from example below to start
 
 ---
 
