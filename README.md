@@ -4,7 +4,9 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 
 <img width="1090" height="468" alt="preview" src="https://github.com/user-attachments/assets/750df14f-44b0-4750-b282-6887e4cdd46a" />
 
-<img width="837" height="453" alt="preview2" src="https://github.com/user-attachments/assets/eec03e9c-501d-4177-a42f-8b8ddb909b18" />
+<img width="892" height="451" alt="preview2" src="https://github.com/user-attachments/assets/5d759dfe-780f-4c01-946a-7ed56a3d3856" />
+
+<img width="400" height="380" alt="animation" src="https://github.com/user-attachments/assets/411ce819-53e1-41c4-95b4-193736ce7f06" />
 
 
 ## Features
