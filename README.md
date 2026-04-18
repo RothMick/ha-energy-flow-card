@@ -291,7 +291,8 @@ Some SVG exports produce **compound paths** — a single `<path>` element contai
 
 If your source path contains multiple subpaths, split them into individual `<path>` elements before use, or ensure your animation code explicitly handles the subpath you intend to animate.
 
-<img width="892" height="451" alt="preview2" src="https://github.com/user-attachments/assets/5d759dfe-780f-4c01-946a-7ed56a3d3856" />
+<img width="935" height="450" alt="example" src="https://github.com/user-attachments/assets/b3548709-04ed-4910-8284-9a71e33dbef9" />
+
 
 ---
 
