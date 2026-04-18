@@ -2,12 +2,7 @@
 
 A custom Home Assistant Lovelace card that displays an animated energy flow over a custom SVG background. Energy values are shown as configurable pills with animated flow lines, and daily totals are displayed in a grid below.
 
-<img width="1090" height="468" alt="preview" src="https://github.com/user-attachments/assets/750df14f-44b0-4750-b282-6887e4cdd46a" />
-
-<img width="892" height="451" alt="preview2" src="https://github.com/user-attachments/assets/5d759dfe-780f-4c01-946a-7ed56a3d3856" />
-
 <img width="400" height="380" alt="animation" src="https://github.com/user-attachments/assets/411ce819-53e1-41c4-95b4-193736ce7f06" />
-
 
 ## Features
 
@@ -21,6 +16,9 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 - Fully configurable via the visual editor (no YAML required)
 - Touch-compatible drag & drop sorting in the editor
 - YAML editor fallback per entry
+
+<img width="1090" height="468" alt="preview" src="https://github.com/user-attachments/assets/750df14f-44b0-4750-b282-6887e4cdd46a" />
+
 
 ---
 
@@ -292,6 +290,8 @@ The direction a comet travels along a path is determined by the **draw direction
 Some SVG exports produce **compound paths** — a single `<path>` element containing multiple subpaths, separated by additional `M` (or `m`) commands mid-string. Energy flow animation logic typically expects **one continuous path per route**.
 
 If your source path contains multiple subpaths, split them into individual `<path>` elements before use, or ensure your animation code explicitly handles the subpath you intend to animate.
+
+<img width="892" height="451" alt="preview2" src="https://github.com/user-attachments/assets/5d759dfe-780f-4c01-946a-7ed56a3d3856" />
 
 ---
 
