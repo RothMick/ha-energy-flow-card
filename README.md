@@ -216,6 +216,9 @@ The [`gh/`](gh/) folder contains ready-to-use SVG backgrounds and a matching `EX
 
 The [`gh/EXAMPLE_CONFIG.md`](gh/EXAMPLE_CONFIG.md) contains the corresponding `energy_values` path definitions (SVG strokes, colors, positions) for this house layout.
 
+<img width="992" height="742" alt="Preview3" src="https://github.com/user-attachments/assets/42c1ef46-6764-4ece-beed-d40827449b7b" />
+
+
 ---
 
 ## SVG paths
