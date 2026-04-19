@@ -218,6 +218,9 @@ The [`gh/EXAMPLE_CONFIG.md`](gh/EXAMPLE_CONFIG.md) contains the corresponding `e
 
 <img width="992" height="742" alt="Preview3" src="https://github.com/user-attachments/assets/42c1ef46-6764-4ece-beed-d40827449b7b" />
 
+nights set also available. Just add "_night".
+
+<img width="976" height="742" alt="Preview3b" src="https://github.com/user-attachments/assets/f919f6a3-8608-401a-9eeb-7d1a2838c9bf" />
 
 ---
 
