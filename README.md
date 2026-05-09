@@ -39,7 +39,7 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 
 1. Copy `energy-flow-card.js`, `isometric.svg` and `isometric_night.svg` into `/config/www/energyflow/` on your Home Assistant instance
 2. Go to **Settings → Dashboards → ⋮ → Resources → Add**
-3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.20.1` and type to **JavaScript module**
+3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.20.2` and type to **JavaScript module**
 4. Reload your browser
 5. Use settings from example below to start
 
@@ -167,9 +167,8 @@ daily_entities:
 | Option | Type | Description |
 |---|---|---|
 | `entity` | entity | Sensor entity to read the value from |
-| `position` | string | Pill position: `top-left`, `top-center`, `top-right`, `middle-left`, `middle-right`, `bottom-left`, `bottom-center`, `bottom-right` You can select each postion only once. So choose wisely. |
+| `position` | string | Pill position: `hidden`, `top-left`, `top-center`, `top-right`, `middle-left`, `middle-right`, `bottom-left`, `bottom-center`, `bottom-right`. Each visible position can only be used once. Use `hidden` (default) to run the flow animation without showing a pill. |
 | `label` | string | Label shown above the value in the pill |
-| `hide_value` | boolean | `false` | Hide the pill entirely (flow animation still runs) |
 | `color_positive` | string | Hex color for positive flow animation (e.g. `#64B7F6`) |
 | `path_positive` | string | SVG path `d` attribute for positive flow direction |
 | `delay_positive` | string | CSS animation delay for positive flow (e.g. `0s`, `-0.8s`) |
@@ -320,6 +319,10 @@ If your source path contains multiple subpaths, split them into individual `<pat
 ---
 
 ## Changelog
+
+### v1.20.2
+- **UX: `position: hidden` replaces `hide_value` toggle** — instead of a separate boolean switch, select `Hidden` in the Position dropdown to suppress the pill while keeping the flow animation. `Hidden` is the default for new entries and can be used by multiple flows simultaneously. Existing configs with `hide_value: true` remain compatible.
+- **Fix: Hidden flows no longer block positions** — flows with position `Hidden` no longer occupy a slot, so visible flows can freely use all 8 positions.
 
 ### v1.20.1
 - **New: Animation Duration setting** — configurable cycle length via `animation_pause` in General Settings (default: `3.5s`). Controls the total duration including the pause between loops; comet speed stays constant.

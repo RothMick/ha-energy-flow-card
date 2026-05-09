@@ -1,7 +1,8 @@
-// energy-flow-card.js  v1.20.1
+// energy-flow-card.js  v1.20.2
 
 // Constants
 const PILL_POSITIONS=[
+  {value:'hidden',       label:'Hidden'},
   {value:'top-left',     label:'Top Left'},
   {value:'top-center',   label:'Top Center'},
   {value:'top-right',    label:'Top Right'},
@@ -249,9 +250,7 @@ class EnergyFlowCardEditor extends HTMLElement {
         const val=ev.detail.value;
         if(!val) return;
         const arr=[...(this._cfg.energy_values||[])];
-        const usedPos=arr.map(e=>e.position).filter(Boolean);
-        const firstFree=PILL_POSITIONS.map(p=>p.value).find(p=>!usedPos.includes(p))||'';
-        arr.push({entity:val,position:firstFree,label:'',color_positive:'',path_positive:'',color_negative:'',path_negative:'',delay_positive:'',delay_negative:''});
+        arr.push({entity:val,position:'hidden',label:'',color_positive:'',path_positive:'',color_negative:'',path_negative:'',delay_positive:'',delay_negative:''});
         this._cfg={...this._cfg,energy_values:arr};
         this._evEditIdx=arr.length-1;
         evAddPicker.value='';
@@ -348,8 +347,8 @@ class EnergyFlowCardEditor extends HTMLElement {
   _renderEvEdit(){
     const sd=this.shadowRoot;
     const evEntries=this._cfg.energy_values||[];
-    const e={entity:'',position:'',label:'',hide_value:false,color_positive:'',path_positive:'',color_negative:'',path_negative:'',delay_positive:'',delay_negative:'',...evEntries[this._evEditIdx]};
-    const usedPos=evEntries.map((ev2,i2)=>i2!==this._evEditIdx?ev2.position:'').filter(Boolean);
+    const e={entity:'',position:'hidden',label:'',color_positive:'',path_positive:'',color_negative:'',path_negative:'',delay_positive:'',delay_negative:'',...evEntries[this._evEditIdx]};
+    const usedPos=evEntries.map((ev2,i2)=>i2!==this._evEditIdx&&ev2.position!=='hidden'?ev2.position:'').filter(Boolean);
     const yamlLbl=this._hass?.localize('ui.panel.lovelace.editor.edit_card.show_code_editor')||'Code Editor';
     const guiLbl =this._hass?.localize('ui.panel.lovelace.editor.edit_card.show_visual_editor')||'Visual Editor';
 
@@ -411,7 +410,7 @@ class EnergyFlowCardEditor extends HTMLElement {
       if(formBase){
         formBase.hass=this._hass;
         formBase.schema=this._evSchemaBase(usedPos, e.position);
-        formBase.data={entity:e.entity,position:e.position,label:e.label,hide_value:e.hide_value||false};
+        formBase.data={entity:e.entity,position:e.position,label:e.label};
         formBase.computeLabel=s=>{
           const generic=this._hass?.localize(`ui.panel.lovelace.editor.card.generic.${s.name}`);
           if(generic) return generic;
@@ -421,7 +420,7 @@ class EnergyFlowCardEditor extends HTMLElement {
         formBase.addEventListener('value-changed',ev=>{
           fireUpdate(ev.detail.value);
           // Refresh position dropdown when position changes
-          const newUsed=(this._cfg.energy_values||[]).map((ev2,i2)=>i2!==this._evEditIdx?ev2.position:'').filter(Boolean);
+          const newUsed=(this._cfg.energy_values||[]).map((ev2,i2)=>i2!==this._evEditIdx&&ev2.position!=='hidden'?ev2.position:'').filter(Boolean);
           formBase.schema=this._evSchemaBase(newUsed, ev.detail.value.position||'');
         });
       }
@@ -533,10 +532,9 @@ class EnergyFlowCardEditor extends HTMLElement {
     return[
       {name:'entity',   required:true, selector:{entity:{}}},
       {name:'position', label:'Position', required:true, selector:{select:{options:
-        PILL_POSITIONS.map(p=>({value:p.value,label:p.label,disabled:p.value!==currentPos&&usedPositions.includes(p.value)}))
+        PILL_POSITIONS.map(p=>({value:p.value,label:p.label,disabled:p.value!=='hidden'&&p.value!==currentPos&&usedPositions.includes(p.value)}))
       }}},
       {name:'label', selector:{entity_name:{}}, context:{entity:'entity'}},
-      {name:'hide_value', label:'Hide Value', selector:{boolean:{}}},
     ];
   }
   _evSchemaPos(){
@@ -679,8 +677,8 @@ class EnergyFlowCard extends HTMLElement {
 
     // Generate pills
     const pills=ev.map((e,i)=>{
-      if(e.hide_value) return '';
-      const pos=PILL_POS_CSS[e.position||'top-left']||'left:12px;top:12px;';
+      if(e.hide_value||e.position==='hidden'||!e.position) return '';
+      const pos=PILL_POS_CSS[e.position]||'left:12px;top:12px;';
       return`<div class="pill" id="pill-ev-${i}" style="${pos}">
         <span class="pt">${e.label||''}</span>
         <span class="pv" id="v-ev-${i}">\u2013</span>
@@ -877,4 +875,4 @@ class EnergyFlowCard extends HTMLElement {
 customElements.define('energy-flow-card',EnergyFlowCard);
 window.customCards=window.customCards||[];
 window.customCards.push({type:'energy-flow-card',name:'Energy Flow Card',description:'Animated energy flow with configurable energy value pills'});
-console.info('%c ENERGY-FLOW-CARD %c v1.20.1','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
+console.info('%c ENERGY-FLOW-CARD %c v1.20.2','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
