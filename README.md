@@ -321,11 +321,6 @@ If your source path contains multiple subpaths, split them into individual `<pat
 
 ## Changelog
 
-### v1.20.4
-- **Fix: Pills hidden despite visible position selected** — energy flow entries with the legacy `hide_value: true` field in their config were not showing the pill even after selecting a visible position. `position` is now the sole source of truth for pill visibility; `hide_value` is ignored. **Users with affected configs:** simply open the entry in the editor, select the desired position, and save — the legacy field is removed automatically on the next save.
-- **Fix: Position change reverting to hidden** — changing an energy flow from position `Hidden` to a visible position was sometimes silently reverted due to `ha-form` re-firing a `value-changed` event with stale data after a schema refresh. Fixed by keeping `formBase.data` in sync after every update.
-- **Fix: Border setting not updating live** — the "Card Border" dropdown in General Settings now updates the card preview immediately when changed. Previously the border only applied after closing the settings panel or saving.
-
 ### v1.20.3
 - **Editor: Color picker for color fields** — color inputs in the editor now show a clickable color square (native color picker) next to a text field. Applies to `color_positive` and `color_negative` in the Energy Value editor, and `color` in the Daily Entity editor. Picker and text field stay in sync; entering a hex value updates the picker instantly.
 - **New: Card Border setting** — added `show_border` to General Settings as a dropdown ("No border" / "Show border"). The border uses the theme's `--ha-card-border-color` / `--divider-color` and updates the card preview live while the settings panel is open.
