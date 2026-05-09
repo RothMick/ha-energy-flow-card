@@ -39,7 +39,7 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 
 1. Copy `energy-flow-card.js`, `isometric.svg` and `isometric_night.svg` into `/config/www/energyflow/` on your Home Assistant instance
 2. Go to **Settings → Dashboards → ⋮ → Resources → Add**
-3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.20.2` and type to **JavaScript module**
+3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.20.3` and type to **JavaScript module**
 4. Reload your browser
 5. Use settings from example below to start
 
@@ -201,6 +201,7 @@ daily_entities:
 | `viewbox_width` | string | `1676` | SVG viewBox width — change when using a custom SVG with different dimensions. |
 | `viewbox_height` | string | `2058` | SVG viewBox height — change when using a custom SVG with different dimensions |
 | `animation_pause` | string | `3.5s` | Total animation cycle length (comet + pause). Higher values = longer pause between loops (e.g. `1s`, `3.5s`, `5s`) |
+| `show_border` | boolean | `false` | Show a 1 px card border. Set via the "Card Border" dropdown in General Settings (`true` = show, `false` = hide). Uses `--ha-card-border-color` / `--divider-color` from the active theme. |
 
 ---
 
@@ -319,6 +320,17 @@ If your source path contains multiple subpaths, split them into individual `<pat
 ---
 
 ## Changelog
+
+### v1.20.4
+- **Fix: Pills hidden despite visible position selected** — energy flow entries with the legacy `hide_value: true` field in their config were not showing the pill even after selecting a visible position. `position` is now the sole source of truth for pill visibility; `hide_value` is ignored. **Users with affected configs:** simply open the entry in the editor, select the desired position, and save — the legacy field is removed automatically on the next save.
+- **Fix: Position change reverting to hidden** — changing an energy flow from position `Hidden` to a visible position was sometimes silently reverted due to `ha-form` re-firing a `value-changed` event with stale data after a schema refresh. Fixed by keeping `formBase.data` in sync after every update.
+- **Fix: Border setting not updating live** — the "Card Border" dropdown in General Settings now updates the card preview immediately when changed. Previously the border only applied after closing the settings panel or saving.
+
+### v1.20.3
+- **Editor: Color picker for color fields** — color inputs in the editor now show a clickable color square (native color picker) next to a text field. Applies to `color_positive` and `color_negative` in the Energy Value editor, and `color` in the Daily Entity editor. Picker and text field stay in sync; entering a hex value updates the picker instantly.
+- **New: Card Border setting** — added `show_border` to General Settings as a dropdown ("No border" / "Show border"). The border uses the theme's `--ha-card-border-color` / `--divider-color` and updates the card preview live while the settings panel is open.
+- **Fix: Pills hidden despite visible position selected** — energy flow entries that still contained the legacy `hide_value: true` field were not showing the pill even after selecting a visible position. `position` is now the sole source of truth for pill visibility. **If you have affected entries:** open the entry in the editor, select the desired position, and save — the legacy field is removed automatically.
+- **Fix: Position change silently reverting to hidden** — changing an energy flow from `Hidden` to a visible position was sometimes reverted immediately due to `ha-form` re-firing a stale `value-changed` event after a schema refresh.
 
 ### v1.20.2
 - **UX: `position: hidden` replaces `hide_value` toggle** — instead of a separate boolean switch, select `Hidden` in the Position dropdown to suppress the pill while keeping the flow animation. `Hidden` is the default for new entries and can be used by multiple flows simultaneously. Existing configs with `hide_value: true` remain compatible.
