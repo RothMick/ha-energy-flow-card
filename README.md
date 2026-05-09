@@ -434,4 +434,4 @@ If your source path contains multiple subpaths, split them into individual `<pat
 
 MIT
 
-<a href="[http://buymeacoffee.com/RothMick](http://buymeacoffee.com/RothMick)"><img width="217" height="50" alt="default-orange" src="https://github.com/user-attachments/assets/0da5dedd-5879-4b2a-9131-cd0ebd751547" /></a>
+<a href="https://buymeacoffee.com/RothMick"><img width="217" height="50" alt="default-orange" src="https://github.com/user-attachments/assets/0da5dedd-5879-4b2a-9131-cd0ebd751547" /></a>
