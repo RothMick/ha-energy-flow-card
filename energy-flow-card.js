@@ -1,4 +1,4 @@
-// energy-flow-card.js  v1.20.3
+// energy-flow-card.js  v1.20.4
 
 // Constants
 const PILL_POSITIONS=[
@@ -59,7 +59,23 @@ class EnergyFlowCardEditor extends HTMLElement {
 
   setConfig(c){
     this._cfg={...c};
-    if(this._editIdx===null && this._evEditIdx===null && !this._mainEditing) this._render();
+    if(this._editIdx===null && this._evEditIdx===null && !this._mainEditing){
+      const scroller=this._findScroller();
+      const saved=scroller?scroller.scrollTop:null;
+      this._render();
+      if(scroller!=null&&saved!=null) requestAnimationFrame(()=>{scroller.scrollTop=saved;});
+    }
+  }
+
+  _findScroller(){
+    let node=this;
+    while(node){
+      const next=node.parentElement||(node.getRootNode&&node.getRootNode().host);
+      if(!next) return null;
+      if(next.scrollHeight>next.clientHeight+1) return next;
+      node=next;
+    }
+    return null;
   }
 
   _fire(cfg){
@@ -76,6 +92,8 @@ class EnergyFlowCardEditor extends HTMLElement {
   // ── Main view ───────────────────────────────────────────────────────────────
   _renderMain(){
     const sd=this.shadowRoot;
+    const scroller=this._findScroller();
+    const savedScroll=scroller?scroller.scrollTop:null;
     const genOpen=sd.getElementById('gen-settings-details')?.open||false;
 
     // ── Energy Values list ──
@@ -345,6 +363,8 @@ class EnergyFlowCardEditor extends HTMLElement {
     // Restore open state of General Settings details
     const genDetails=sd.getElementById('gen-settings-details');
     if(genDetails&&genOpen) genDetails.open=true;
+
+    if(scroller!=null&&savedScroll!=null) requestAnimationFrame(()=>{scroller.scrollTop=savedScroll;});
   }
 
   // ── Energy Values edit view ─────────────────────────────────────────────────
@@ -373,7 +393,7 @@ class EnergyFlowCardEditor extends HTMLElement {
             <h3 class="flow-heading">Positive Animation</h3>
           </div>
           <div class="color-field">
-            <input type="color" id="picker-pos" class="color-square" title="Farbe wählen">
+            <div class="cp-swatch no-color" id="swatch-pos"><input type="color" id="picker-pos" class="cp-hidden-input"></div>
             <ha-textfield id="tfield-pos" label="Color (e.g. #64B7F6)" style="flex:1;"></ha-textfield>
           </div>
           <ha-form id="ef-pos"></ha-form>
@@ -381,7 +401,7 @@ class EnergyFlowCardEditor extends HTMLElement {
             <h3 class="flow-heading">Negative Animation</h3>
           </div>
           <div class="color-field">
-            <input type="color" id="picker-neg" class="color-square" title="Farbe wählen">
+            <div class="cp-swatch no-color" id="swatch-neg"><input type="color" id="picker-neg" class="cp-hidden-input"></div>
             <ha-textfield id="tfield-neg" label="Color (e.g. #64B7F6)" style="flex:1;"></ha-textfield>
           </div>
           <ha-form id="ef-neg"></ha-form>`
@@ -455,38 +475,48 @@ class EnergyFlowCardEditor extends HTMLElement {
         formNeg.addEventListener('value-changed',ev=>{fireUpdate(ev.detail.value);});
       }
 
+      const syncSwatch=(swatch,picker,color)=>{
+        const valid=/^#[0-9a-fA-F]{6}$/i.test(color);
+        if(swatch){swatch.style.background=valid?color:'';swatch.classList.toggle('no-color',!valid);}
+        if(picker) picker.value=valid?color:'#ffffff';
+      };
+
       // Wire color_positive picker + textfield
       const pickerPos=sd.getElementById('picker-pos');
+      const swatchPos=sd.getElementById('swatch-pos');
       const tfieldPos=sd.getElementById('tfield-pos');
       const initPos=e.color_positive||'';
-      if(pickerPos) pickerPos.value=/^#[0-9a-fA-F]{6}$/i.test(initPos)?initPos:'#ffffff';
+      syncSwatch(swatchPos,pickerPos,initPos);
       if(tfieldPos) tfieldPos.value=initPos;
       pickerPos?.addEventListener('input',ev2=>{
         const hex=ev2.target.value;
+        syncSwatch(swatchPos,null,hex);
         if(tfieldPos) tfieldPos.value=hex;
         fireUpdate({color_positive:hex});
       });
       tfieldPos?.addEventListener('change',ev2=>{
         const val=ev2.target.value.trim();
+        syncSwatch(swatchPos,pickerPos,val);
         fireUpdate({color_positive:val});
-        if(/^#[0-9a-fA-F]{6}$/i.test(val)&&pickerPos) pickerPos.value=val;
       });
 
       // Wire color_negative picker + textfield
       const pickerNeg=sd.getElementById('picker-neg');
+      const swatchNeg=sd.getElementById('swatch-neg');
       const tfieldNeg=sd.getElementById('tfield-neg');
       const initNeg=e.color_negative||'';
-      if(pickerNeg) pickerNeg.value=/^#[0-9a-fA-F]{6}$/i.test(initNeg)?initNeg:'#ffffff';
+      syncSwatch(swatchNeg,pickerNeg,initNeg);
       if(tfieldNeg) tfieldNeg.value=initNeg;
       pickerNeg?.addEventListener('input',ev2=>{
         const hex=ev2.target.value;
+        syncSwatch(swatchNeg,null,hex);
         if(tfieldNeg) tfieldNeg.value=hex;
         fireUpdate({color_negative:hex});
       });
       tfieldNeg?.addEventListener('change',ev2=>{
         const val=ev2.target.value.trim();
+        syncSwatch(swatchNeg,pickerNeg,val);
         fireUpdate({color_negative:val});
-        if(/^#[0-9a-fA-F]{6}$/i.test(val)&&pickerNeg) pickerNeg.value=val;
       });
     }
   }
@@ -509,7 +539,7 @@ class EnergyFlowCardEditor extends HTMLElement {
         </ha-icon-button>
       </div>
       ${this._yamlMode?'<ha-yaml-editor id="ye"></ha-yaml-editor>'
-        :'<ha-form id="ef"></ha-form><div class="color-field"><input type="color" id="picker-color" class="color-square" title="Farbe wählen"><ha-textfield id="tfield-color" label="Color (e.g. #64B7F6)" style="flex:1;"></ha-textfield></div>'}`;
+        :'<ha-form id="ef"></ha-form><div class="color-field"><div class="cp-swatch no-color" id="swatch-color"><input type="color" id="picker-color" class="cp-hidden-input"></div><ha-textfield id="tfield-color" label="Color (e.g. #64B7F6)" style="flex:1;"></ha-textfield></div>'}`;
 
     sd.getElementById('back').addEventListener('click',()=>{
       this._yamlMode=false;
@@ -555,12 +585,19 @@ class EnergyFlowCardEditor extends HTMLElement {
 
       // Wire color picker + textfield
       const pickerColor=sd.getElementById('picker-color');
+      const swatchColor=sd.getElementById('swatch-color');
       const tfieldColor=sd.getElementById('tfield-color');
       const initColor=e.color||'';
-      if(pickerColor) pickerColor.value=/^#[0-9a-fA-F]{6}$/i.test(initColor)?initColor:'#ffffff';
+      const syncSwatchC=(swatch,picker,color)=>{
+        const valid=/^#[0-9a-fA-F]{6}$/i.test(color);
+        if(swatch){swatch.style.background=valid?color:'';swatch.classList.toggle('no-color',!valid);}
+        if(picker) picker.value=valid?color:'#ffffff';
+      };
+      syncSwatchC(swatchColor,pickerColor,initColor);
       if(tfieldColor) tfieldColor.value=initColor;
       pickerColor?.addEventListener('input',ev2=>{
         const hex=ev2.target.value;
+        syncSwatchC(swatchColor,null,hex);
         if(tfieldColor) tfieldColor.value=hex;
         const arr=[...(this._cfg.daily_entities||[])];
         arr[this._editIdx]={...arr[this._editIdx],color:hex};
@@ -568,10 +605,10 @@ class EnergyFlowCardEditor extends HTMLElement {
       });
       tfieldColor?.addEventListener('change',ev2=>{
         const val=ev2.target.value.trim();
+        syncSwatchC(swatchColor,pickerColor,val);
         const arr=[...(this._cfg.daily_entities||[])];
         arr[this._editIdx]={...arr[this._editIdx],color:val};
         this._fire({...this._cfg,daily_entities:arr});
-        if(/^#[0-9a-fA-F]{6}$/i.test(val)&&pickerColor) pickerColor.value=val;
       });
     }
   }
@@ -668,7 +705,9 @@ ha-entity-picker{display:block;margin-top:20px}
 .flow-heading{margin:0;font-size:var(--ha-font-size-l,1em);font-weight:500;color:var(--primary-text-color);}
 .color-swatch{display:inline-block;width:18px;height:18px;border-radius:4px;border:1px solid var(--divider-color,rgba(128,128,128,.4));flex-shrink:0;background-image:linear-gradient(45deg,#aaa 25%,transparent 25%,transparent 75%,#aaa 75%),linear-gradient(45deg,#aaa 25%,#fff 25%,#fff 75%,#aaa 75%);background-size:6px 6px;background-position:0 0,3px 3px;}
 .color-field{display:flex;gap:8px;align-items:center;margin:4px 0 8px;}
-.color-square{width:36px;height:36px;padding:0;border-radius:4px;cursor:pointer;border:1px solid var(--divider-color,rgba(0,0,0,0.12));flex-shrink:0;}
+.cp-swatch{width:36px;height:36px;flex-shrink:0;border-radius:4px;border:1px solid var(--divider-color,rgba(0,0,0,0.12));cursor:pointer;position:relative;overflow:hidden;}
+.cp-swatch.no-color{background:repeating-linear-gradient(-45deg,rgba(120,120,120,0.5) 0px,rgba(120,120,120,0.5) 4px,transparent 4px,transparent 8px);}
+.cp-hidden-input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;padding:0;border:none;}
 details.gen-settings{margin-top:28px;}
 details.gen-settings>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;padding:4px 0;user-select:none;}
 details.gen-settings>summary::-webkit-details-marker{display:none;}
@@ -942,4 +981,4 @@ class EnergyFlowCard extends HTMLElement {
 customElements.define('energy-flow-card',EnergyFlowCard);
 window.customCards=window.customCards||[];
 window.customCards.push({type:'energy-flow-card',name:'Energy Flow Card',description:'Animated energy flow with configurable energy value pills'});
-console.info('%c ENERGY-FLOW-CARD %c v1.20.3','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
+console.info('%c ENERGY-FLOW-CARD %c v1.20.4','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
