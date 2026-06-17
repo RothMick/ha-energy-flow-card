@@ -1,4 +1,4 @@
-// energy-flow-card.js  v1.20.4
+// energy-flow-card.js  v1.20.5
 
 // Constants
 const PILL_POSITIONS=[
@@ -43,9 +43,14 @@ class EnergyFlowCardEditor extends HTMLElement {
     this._evYamlMode=false;
     this._mainEditing=false;
     this._gsPending=null;
+    this._gfPending=null;
   }
 
   disconnectedCallback(){
+    if(this._gfPending){
+      this._fire(this._gfPending);
+      this._gfPending=null;
+    }
     if(this._gsPending){
       this._fire(this._gsPending);
       this._gsPending=null;
@@ -185,11 +190,10 @@ class EnergyFlowCardEditor extends HTMLElement {
 
       // Text fields are buffered – no immediate _fire while typing
       const GF_TEXT=new Set(['svg_day','svg_night']);
-      let gfPending=null;
 
       const gfFlush=()=>{
-        if(!gfPending) return;
-        const d=gfPending; gfPending=null;
+        if(!this._gfPending) return;
+        const d=this._gfPending; this._gfPending=null;
         // _mainEditing=true: prevents setConfig from re-rendering (keeps DOM stable)
         this._mainEditing=true;
         this._fire(d);
@@ -208,10 +212,10 @@ class EnergyFlowCardEditor extends HTMLElement {
 
         if(onlyText){
           // Text input: buffer only, no _fire → no setConfig → no re-render → no focus loss
-          gfPending=d;
+          this._gfPending=d;
         } else {
           // Non-text (entity picker, select): fire immediately
-          gfPending=null;
+          this._gfPending=null;
           this._mainEditing=true;
           this._fire(d);
           this._mainEditing=false;
@@ -227,7 +231,7 @@ class EnergyFlowCardEditor extends HTMLElement {
       form.addEventListener('focusout',()=>{
         setTimeout(()=>{
           // activeElement !== form: focus is truly outside ha-form
-          if(gfPending && this.shadowRoot.activeElement!==form) gfFlush();
+          if(this._gfPending && this.shadowRoot.activeElement!==form) gfFlush();
         },0);
       });
     }
@@ -865,7 +869,8 @@ class EnergyFlowCard extends HTMLElement {
     // Energy values: pills + animations
     const ev=this._getEnergyValues();
     const on=(v,t=15)=>Math.abs(v)>t;
-    const pause=Math.max(0,parseFloat(this._cfg.animation_pause||'3.5')||3.5);
+    const pauseRaw=parseFloat(this._cfg.animation_pause);
+    const pause=Math.max(0,isNaN(pauseRaw)?3.5:pauseRaw);
     let animCss='';
 
     ev.forEach((e,i)=>{
@@ -981,4 +986,4 @@ class EnergyFlowCard extends HTMLElement {
 customElements.define('energy-flow-card',EnergyFlowCard);
 window.customCards=window.customCards||[];
 window.customCards.push({type:'energy-flow-card',name:'Energy Flow Card',description:'Animated energy flow with configurable energy value pills'});
-console.info('%c ENERGY-FLOW-CARD %c v1.20.4','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
+console.info('%c ENERGY-FLOW-CARD %c v1.20.5','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');

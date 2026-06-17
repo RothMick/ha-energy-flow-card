@@ -39,7 +39,7 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 
 1. Copy `energy-flow-card.js`, `isometric.svg` and `isometric_night.svg` into `/config/www/energyflow/` on your Home Assistant instance
 2. Go to **Settings → Dashboards → ⋮ → Resources → Add**
-3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.20.4` and type to **JavaScript module**
+3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.20.5` and type to **JavaScript module**
 4. Reload your browser
 5. Use settings from example below to start
 
@@ -319,6 +319,10 @@ If your source path contains multiple subpaths, split them into individual `<pat
 ---
 
 ## Changelog
+
+### v1.20.5
+- **Fix: `animation_pause: 0` was ignored** — setting the animation pause to `0` (no pause between flow cycles) silently fell back to the default `3.5s`, because `0` is falsy in JavaScript and was caught by the fallback meant only for empty/invalid values. Zero is now honored correctly.
+- **Fix: Buffered text could be lost when closing the editor** — typing into a buffered text field (Background Day/Night SVG path) and closing the card editor without first leaving the field (no blur) could discard the unsaved input. Buffered changes are now flushed when the editor is removed.
 
 ### v1.20.4
 - **Editor: Color picker shows dashed pattern when no color is set** — the color swatch in the editor now displays a diagonal stripe pattern (like the Glow Card) when the field is empty, instead of a plain white square. Once a color is picked or typed, the swatch shows the selected color as background.
