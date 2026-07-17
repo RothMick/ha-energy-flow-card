@@ -33,8 +33,9 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 2. Go to **Frontend → ⋮ → Custom repositories**
 3. Add this repository URL and select type **Lovelace**
 4. Click **Install**
-5. Reload your browser
-6. Use settings from example below to start
+5. HACS installs only the card itself (`energy-flow-card.js`). Copy the SVG backgrounds (`isometric.svg`, `isometric_night.svg` — or a variant from the [`gh/`](gh/) folder) into `/config/www/energyflow/` manually, so the `/local/energyflow/…` paths from the examples work
+6. Reload your browser
+7. Use settings from example below to start
 
 ### Option B — Manual
 
@@ -146,6 +147,30 @@ show_border: false
 
 <img width="400" height="380" alt="animation" src="https://github.com/user-attachments/assets/411ce819-53e1-41c4-95b4-193736ce7f06" />
 
+### Jinja2 template example
+
+Instead of an `entity`, every energy flow and every additional value (main and second value) can use a Jinja2 `template` — pick **Value Source → Jinja2 template** in the editor. Useful to combine multiple sensors:
+
+```yaml
+energy_values:
+  - template: >-
+      {{ states('sensor.battery_a_power') | float(0) + states('sensor.battery_b_power') | float(0) }}
+    position: top-left
+    label: Batteries
+    color_positive: "#97EA63"
+    path_positive: >-
+      M163.503 1071.5L163.503 646.494C163.503 646.494 162 631.489 170.499
+      618.991C178.999 606.493 189.503 603.494 189.503 603.494L259.064 569
+daily_entities:
+  - template: "{{ (states('sensor.daily_grid_consumption') | float(0)) | round(1) }} kWh"
+    label: Grid
+    icon: mdi:transmission-tower
+    secondary_template: "{{ states('sensor.daily_grid_feed') | float(0) | round(1) }}"
+    secondary_icon: mdi:arrow-top-right
+```
+
+Templates are evaluated server-side and update automatically. Energy flow templates must return a **number in W** (drives pill, flow direction and animation). Additional value templates are shown **as-is** — include the unit in the template if desired.
+
 ---
 
 ## Configuration options
@@ -230,7 +255,7 @@ The [`gh/EXAMPLE_CONFIG.md`](gh/EXAMPLE_CONFIG.md) contains the corresponding `e
 
 The flow animation follows SVG `path` elements. To get the correct paths for your own SVG:
 
-1. Draw your isomisometric SVT (e.g. affinity studio, Figma)
+1. Draw your isometric SVG (e.g. Affinity Designer, Figma)
 2. Trace the desired flow line as a path
 3. Copy the `d` attribute value
 4. Paste it into `path_positive` / `path_negative` in the card config (a negative path is the positive version but from last to first point)
