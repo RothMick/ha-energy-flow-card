@@ -9,9 +9,10 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 ## Features
 
 - Animated SVG flow lines per energy source (positive & negative direction)
-- Up to 8 configurable energy value pills in a 3×3 grid
+- Up to 12 energy flows — max. 8 visible value pills in a 3×3 grid
+- Value source per flow: entity or Jinja2 template (combine multiple sensors)
 - Only SVG flow also possible
-- Up to 10 daily entity values with optional secondary entity
+- Up to 10 additional values (entity or Jinja2 template) with optional second value
 - Per-entity column width: half width (1-col) or full tile width (2-col)
 - Configurable grid breakpoint that controls the 2-column → 1-column layout switch
 - Day/night SVG backgrounds with auto-switching via sun entity
@@ -39,7 +40,7 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 
 1. Copy `energy-flow-card.js`, `isometric.svg` and `isometric_night.svg` into `/config/www/energyflow/` on your Home Assistant instance
 2. Go to **Settings → Dashboards → ⋮ → Resources → Add**
-3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.20.5` and type to **JavaScript module**
+3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.21.0` and type to **JavaScript module**
 4. Reload your browser
 5. Use settings from example below to start
 
@@ -157,7 +158,7 @@ show_border: false
 | `svg_night` | string | | Path to the SVG background for nighttime |
 | `mode` | `auto` / `day` / `night` | `day` | Display mode. `auto` switches based on `entity_sun` |
 | `entity_sun` | entity | | Any entity whose state is `below_horizon` for night detection |
-| `energy_values` | list | `[]` | Up to 8 energy pills including energy flow animations (see below) |
+| `energy_values` | list | `[]` | Up to 12 energy flows (max. 8 visible pills) including energy flow animations (see below) |
 | `daily_entities` | list | `[]` | Daily total values shown below the SVG (see below) |
 | `general settings` | additional hidden settings | `[]` | Basic settings (see below) |
 
@@ -165,7 +166,8 @@ show_border: false
 
 | Option | Type | Description |
 |---|---|---|
-| `entity` | entity | Sensor entity to read the value from |
+| `entity` | entity | Sensor entity to read the value from (alternative to `template`) |
+| `template` | string | Jinja2 template returning a number in W (alternative to `entity`, e.g. `{{ states('sensor.a') \| float(0) + states('sensor.b') \| float(0) }}`). Evaluated server-side and updates automatically. |
 | `position` | string | Pill position: `hidden`, `top-left`, `top-center`, `top-right`, `middle-left`, `middle-right`, `bottom-left`, `bottom-center`, `bottom-right`. Each visible position can only be used once. Use `hidden` (default) to run the flow animation without showing a pill. |
 | `label` | string | Label shown above the value in the pill |
 | `color_positive` | string | Hex color for positive flow animation (e.g. `#64B7F6`) |
@@ -173,19 +175,21 @@ show_border: false
 | `delay_positive` | string | CSS animation delay for positive flow (e.g. `0s`, `-0.8s`) |
 | `color_negative` | string | Hex color for negative flow (leave empty to reuse positive color) |
 | `path_negative` | string | SVG path `d` attribute for negative flow direction |
-| `delay_negative` | string | CSS animation delay for negative flow |
+| `delay_negative` | string | CSS animation delay for negative flow (leave empty to reuse the positive delay) |
 
 ### `daily_entities` entry
 
 | Option | Type | Description |
 |---|---|---|
-| `entity` | entity | Sensor entity for the daily value |
+| `entity` | entity | Sensor entity for the value (alternative to `template`) |
+| `template` | string | Jinja2 template for the value (alternative to `entity`). Evaluated server-side, updates automatically; the output is shown as-is (include the unit in the template if desired) |
 | `label` | string | Display label (leave empty to use friendly name) |
 | `icon` | string | Icon (e.g. `mdi:solar-power`). If omitted, the entity's own icon is used automatically |
 | `color` | string | Icon color (hex) |
-| `secondary_entity` | entity | Optional second value shown small beside the main value |
+| `secondary_entity` | entity | Optional second value shown small beside the main value (alternative to `secondary_template`) |
+| `secondary_template` | string | Jinja2 template for the second value (alternative to `secondary_entity`), output shown as-is |
 | `secondary_icon` | string | Icon for the secondary value |
-| `secondary_no_unit` | boolean | Hide the unit of the secondary value |
+| `secondary_no_unit` | boolean | Hide the unit of the secondary value (entity mode only) |
 | `col_span` | `1-col` / `2-col` | `1-col` | `1-col` places the tile in one grid column; `2-col` stretches it across the full card width |
 
 ### general settings
@@ -319,6 +323,19 @@ If your source path contains multiple subpaths, split them into individual `<pat
 ---
 
 ## Changelog
+
+### v1.21.0
+- **New: Jinja2 template value sources** — every energy flow and every additional value (main and optional second value) can read its value from a Jinja2 template instead of an entity, e.g. to combine two sensors: `{{ states('sensor.a') | float(0) + states('sensor.b') | float(0) }}`. Templates are evaluated server-side and update automatically. Energy flow templates must return a number in W; additional value templates are shown as-is (include the unit in the template if desired). The editor offers a "Value Source" selector (Entity / Jinja2 template) per value.
+- **New: Up to 12 energy flows** — the entry limit is raised from 9 to 12. The maximum of 8 visible pills is unchanged; the extra slots are for hidden (animation-only) or template flows.
+- **Editor: Simplified adding** — a single "Add Energy Value" / "Add Additional Value" button creates an empty entry and opens its settings directly; the value source is chosen there (replaces the entity pickers).
+- **Editor: Renames & layout** — section "Additional Entities" is now "Additional Values"; the "Additional Entity (Optional)" field became the "Optional second value" section with its own Value Source selector; source selectors render as horizontal boxes; field spacing normalized.
+- **Fix: Animation stagger lost after direction change** — when a flow switched direction (e.g. feed-in ↔ grid import), its animation restarted out of phase, so the configured delays no longer lined up with the other flows. Delays are now epoch-corrected on every restart, keeping the configured stagger intact no matter when the direction flips. `delay_negative` also falls back to `delay_positive` when empty (like color and path).
+- **Fix: Wrong path geometry after config change** — a currently negative flow animated on the positive path after editing the card, until the direction changed again.
+- **Fix: Newly added entries could be lost** — adding an entry and saving the dialog without editing any field did not persist the entry.
+- **Fix: `animation_pause: 0` reverted by the editor** — changing any General Settings field silently rewrote a configured `0` back to `3.5s`.
+- **Fix: HTML escaping in the card** — labels, icons and colors containing `&`, `<` or `"` no longer break the rendering.
+- **Fix: Empty animation delay** — an empty delay field produced an invalid CSS declaration; it now defaults to `0s`.
+- **Internal** — entity watch list is cached per config (less work on every state update); editor wiring deduplicated (color fields, value-source selects, template fields).
 
 ### v1.20.5
 - **Fix: `animation_pause: 0` was ignored** — setting the animation pause to `0` (no pause between flow cycles) silently fell back to the default `3.5s`, because `0` is falsy in JavaScript and was caught by the fallback meant only for empty/invalid values. Zero is now honored correctly.

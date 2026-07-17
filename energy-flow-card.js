@@ -1,4 +1,4 @@
-// energy-flow-card.js  v1.20.5
+// energy-flow-card.js  v1.21.0
 
 // Constants
 const PILL_POSITIONS=[
@@ -44,6 +44,9 @@ class EnergyFlowCardEditor extends HTMLElement {
     this._mainEditing=false;
     this._gsPending=null;
     this._gfPending=null;
+    this._evSrcMode=null;
+    this._deSrcMode=null;
+    this._deSecSrcMode=null;
   }
 
   disconnectedCallback(){
@@ -104,7 +107,8 @@ class EnergyFlowCardEditor extends HTMLElement {
     // ── Energy Values list ──
     const evEntries=this._cfg.energy_values||[];
     const evRows=evEntries.map((e,i)=>{
-      const name=e.label||(this._hass?.states[e.entity]?.attributes?.friendly_name)||e.entity||'…';
+      const src=e.entity||(e.template?'Jinja2 Template':'');
+      const name=e.label||(this._hass?.states[e.entity]?.attributes?.friendly_name)||src||'…';
       const posLbl=this._posLabel(e.position||'');
       const color=e.color_positive||'';
       return`<div class="erow" data-idx="${i}">
@@ -112,7 +116,7 @@ class EnergyFlowCardEditor extends HTMLElement {
         <ha-icon icon="mdi:flash" style="color:${this._esc(color)};--mdc-icon-size:24px;flex-shrink:0;margin:0 2px"></ha-icon>
         <div class="einfo">
           <span class="ename">${this._esc(name)}</span>
-          <span class="esub">${this._esc(posLbl)}${posLbl&&e.entity?' · ':''}${this._esc(e.entity||'')}</span>
+          <span class="esub">${this._esc(posLbl)}${posLbl&&src?' · ':''}${this._esc(src)}</span>
         </div>
         <ha-icon-button class="ibtn" data-evaction="del" data-idx="${i}" title="Delete">
           <ha-icon icon="mdi:close"></ha-icon>
@@ -122,15 +126,15 @@ class EnergyFlowCardEditor extends HTMLElement {
         </ha-icon-button>
       </div>`;
     }).join('');
-    const canAddEv=evEntries.length<9;
+    const canAddEv=evEntries.length<12;
 
     // ── Daily Entities list ──
     const dailyEntities=this._cfg.daily_entities||[];
     const deRows=dailyEntities.map((e,i)=>{
       const color=e.color||'';
       const stObj=this._hass?.states[e.entity];
-      const name=e.label||(stObj?.attributes?.friendly_name)||e.entity||'…';
-      const sub=e.entity||'';
+      const sub=e.entity||(e.template?'Jinja2 Template':'');
+      const name=e.label||(stObj?.attributes?.friendly_name)||sub||'…';
       const iconEl=e.icon
         ?`<ha-icon icon="${this._esc(e.icon)}" style="color:${this._esc(color)};--mdc-icon-size:24px;flex-shrink:0;margin:0 2px"></ha-icon>`
         :`<ha-state-icon id="dei-${i}" style="color:${this._esc(color)};--mdc-icon-size:24px;flex-shrink:0;margin:0 2px"></ha-state-icon>`;
@@ -158,14 +162,14 @@ class EnergyFlowCardEditor extends HTMLElement {
         <ha-sortable id="ev-sortable" handle-selector=".handle">
           <div class="elist">${evRows}</div>
         </ha-sortable>
-        ${canAddEv?'<ha-entity-picker id="ev-addpicker" add-button></ha-entity-picker>':''}
+        ${canAddEv?'<button id="ev-addbtn" class="addbtn" type="button"><ha-icon icon="mdi:plus"></ha-icon>Add Energy Value</button>':''}
       </div>
-      <h3 class="section-heading">Additional Entities</h3>
+      <h3 class="section-heading">Additional Values</h3>
       <div class="section-body">
         <ha-sortable id="de-sortable" handle-selector=".handle">
           <div class="elist">${deRows}</div>
         </ha-sortable>
-        ${canAddDe?'<ha-entity-picker id="de-addpicker" add-button></ha-entity-picker>':''}
+        ${canAddDe?'<button id="de-addbtn" class="addbtn" type="button"><ha-icon icon="mdi:plus"></ha-icon>Add Additional Value</button>':''}
       </div>
       <details class="gen-settings" id="gen-settings-details">
         <summary class="gen-settings-summary"><span>General Settings</span></summary>
@@ -202,9 +206,8 @@ class EnergyFlowCardEditor extends HTMLElement {
 
       form.addEventListener('value-changed',ev=>{
         const d={...this._cfg,...ev.detail.value,daily_entities:this._cfg.daily_entities,energy_values:this._cfg.energy_values};
-        const oldMode=this._cfg.mode||'auto';
-        if(!d.entity_sun && d.mode==='auto') d.mode='day';
-        const modeForced=d.mode==='day' && oldMode==='auto';
+        let modeForced=false;
+        if(!d.entity_sun && d.mode==='auto'){d.mode='day';modeForced=true;}
 
         // Check whether only text fields changed
         const changedKeys=Object.keys(ev.detail.value).filter(k=>ev.detail.value[k]!==this._cfg[k]);
@@ -260,22 +263,21 @@ class EnergyFlowCardEditor extends HTMLElement {
     sd.querySelectorAll('[data-evaction="edit"]').forEach(b=>{
       b.addEventListener('click',()=>{
         this._evEditIdx=parseInt(b.dataset.idx);
+        this._evSrcMode=null;
         this._render();
       });
     });
 
-    // ── Energy Values: add picker ──
-    const evAddPicker=sd.getElementById('ev-addpicker');
-    if(evAddPicker){
-      evAddPicker.hass=this._hass;
-      evAddPicker.addEventListener('value-changed',ev=>{
-        const val=ev.detail.value;
-        if(!val) return;
+    // ── Energy Values: add (leerer Eintrag — Quelle wird im Werte-Editor gewählt) ──
+    const evAddBtn=sd.getElementById('ev-addbtn');
+    if(evAddBtn){
+      evAddBtn.addEventListener('click',()=>{
         const arr=[...(this._cfg.energy_values||[])];
-        arr.push({entity:val,position:'hidden',label:'',color_positive:'',path_positive:'',color_negative:'',path_negative:'',delay_positive:'',delay_negative:''});
-        this._cfg={...this._cfg,energy_values:arr};
+        arr.push({entity:'',position:'hidden',label:'',color_positive:'',path_positive:'',color_negative:'',path_negative:'',delay_positive:'',delay_negative:''});
+        // Edit-Index vor _fire setzen: setConfig überspringt dann das Re-Render dieser View
         this._evEditIdx=arr.length-1;
-        evAddPicker.value='';
+        this._evSrcMode=null;
+        this._fire({...this._cfg,energy_values:arr});
         this._render();
       });
     }
@@ -304,24 +306,23 @@ class EnergyFlowCardEditor extends HTMLElement {
     sd.querySelectorAll('[data-action="edit"]').forEach(b=>{
       b.addEventListener('click',()=>{
         this._editIdx=parseInt(b.dataset.idx);
+        this._deSrcMode=null;
+        this._deSecSrcMode=null;
         this._render();
       });
     });
 
-    // ── Daily Entities: add picker ──
-    const deAddPicker=sd.getElementById('de-addpicker');
-    if(deAddPicker){
-      deAddPicker.hass=this._hass;
-      deAddPicker.addEventListener('value-changed',ev=>{
-        const val=ev.detail.value;
-        if(!val) return;
+    // ── Daily Entities: add (leerer Eintrag — Quelle wird im Werte-Editor gewählt) ──
+    const deAddBtn=sd.getElementById('de-addbtn');
+    if(deAddBtn){
+      deAddBtn.addEventListener('click',()=>{
         const arr=[...(this._cfg.daily_entities||[])];
-        const stObj=this._hass?.states[val];
-        const autoIcon=stObj?.attributes?.icon||'';
-        arr.push({entity:val,label:'',icon:autoIcon,color:'',secondary_entity:'',secondary_icon:'',col_span:'1-col'});
-        this._cfg={...this._cfg,daily_entities:arr};
+        arr.push({entity:'',label:'',icon:'',color:'',secondary_entity:'',secondary_icon:'',col_span:'1-col'});
+        // Edit-Index vor _fire setzen: setConfig überspringt dann das Re-Render dieser View
         this._editIdx=arr.length-1;
-        deAddPicker.value='';
+        this._deSrcMode=null;
+        this._deSecSrcMode=null;
+        this._fire({...this._cfg,daily_entities:arr});
         this._render();
       });
     }
@@ -339,7 +340,7 @@ class EnergyFlowCardEditor extends HTMLElement {
         gradient_night:  this._cfg.gradient_night  ||'linear-gradient(to bottom,#0A1929 0%,#1A2332 67%,#2C3440 100%)',
         viewbox_width:   this._cfg.viewbox_width   ||'1676',
         viewbox_height:  this._cfg.viewbox_height  ||'2058',
-        animation_pause: this._cfg.animation_pause ||'3.5s',
+        animation_pause: this._cfg.animation_pause ?? '3.5s',
         show_border:     this._cfg.show_border===true?'show':'hide',
       };
       gsForm.computeLabel=s=>s.label??s.name;
@@ -375,7 +376,8 @@ class EnergyFlowCardEditor extends HTMLElement {
   _renderEvEdit(){
     const sd=this.shadowRoot;
     const evEntries=this._cfg.energy_values||[];
-    const e={entity:'',position:'hidden',label:'',color_positive:'',path_positive:'',color_negative:'',path_negative:'',delay_positive:'',delay_negative:'',...evEntries[this._evEditIdx]};
+    const e={entity:'',template:'',position:'hidden',label:'',color_positive:'',path_positive:'',color_negative:'',path_negative:'',delay_positive:'',delay_negative:'',...evEntries[this._evEditIdx]};
+    const srcMode=e.template?'template':(this._evSrcMode||'entity');
     const usedPos=evEntries.map((ev2,i2)=>i2!==this._evEditIdx&&ev2.position!=='hidden'?ev2.position:'').filter(Boolean);
     const yamlLbl=this._hass?.localize('ui.panel.lovelace.editor.edit_card.show_code_editor')||'Code Editor';
     const guiLbl =this._hass?.localize('ui.panel.lovelace.editor.edit_card.show_visual_editor')||'Visual Editor';
@@ -392,7 +394,10 @@ class EnergyFlowCardEditor extends HTMLElement {
       </div>
       ${this._evYamlMode
         ?'<ha-yaml-editor id="ye"></ha-yaml-editor>'
-        :`<ha-form id="ef-base"></ha-form>
+        :`<ha-form id="ef-src"></ha-form>
+          <div id="ev-entity-wrap" class="${srcMode!=='entity'?'hidden':''}"><ha-form id="ef-entity"></ha-form></div>
+          <div id="ev-tpl-wrap" class="${srcMode!=='template'?'hidden':''}"><ha-form id="ef-tpl"></ha-form></div>
+          <ha-form id="ef-base"></ha-form>
           <div class="flow-heading-row">
             <h3 class="flow-heading">Positive Animation</h3>
           </div>
@@ -414,6 +419,7 @@ class EnergyFlowCardEditor extends HTMLElement {
     sd.getElementById('back').addEventListener('click',()=>{
       this._evYamlMode=false;
       this._evEditIdx=null;
+      this._evSrcMode=null;
       this._render();
     });
     sd.getElementById('yaml-toggle').addEventListener('click',()=>{
@@ -445,7 +451,8 @@ class EnergyFlowCardEditor extends HTMLElement {
       if(formBase){
         formBase.hass=this._hass;
         formBase.schema=this._evSchemaBase(usedPos, e.position);
-        formBase.data={entity:e.entity,position:e.position,label:e.label};
+        // entity nur als Kontext für den entity_name-Selector (kein Schema-Feld)
+        formBase.data={position:e.position,label:e.label,entity:e.entity};
         formBase.computeLabel=s=>{
           const generic=this._hass?.localize(`ui.panel.lovelace.editor.card.generic.${s.name}`);
           if(generic) return generic;
@@ -453,13 +460,47 @@ class EnergyFlowCardEditor extends HTMLElement {
           return(k&&this._hass?.localize(k))||s.label||s.name;
         };
         formBase.addEventListener('value-changed',ev=>{
-          const newData=ev.detail.value;
+          // entity strippen: wird ausschließlich über ef-src/ef-entity geschrieben
+          const{entity:_e,...newData}=ev.detail.value;
           fireUpdate(newData);
-          formBase.data=newData;
+          formBase.data=ev.detail.value;
           const newUsed=(this._cfg.energy_values||[]).map((ev2,i2)=>i2!==this._evEditIdx&&ev2.position!=='hidden'?ev2.position:'').filter(Boolean);
           formBase.schema=this._evSchemaBase(newUsed, newData.position||'');
         });
       }
+
+      // Wechsel räumt das Feld der anderen Quelle auf (wie ha-glow-card Main Value)
+      this._wireSrcSelect(sd,'ef-src','ev-entity-wrap','ev-tpl-wrap',srcMode,m=>{
+        this._evSrcMode=m;
+        if(m==='entity'){
+          fireUpdate({template:''});
+          const ft=sd.getElementById('ef-tpl');if(ft)ft.data={template:''};
+        }else{
+          fireUpdate({entity:''});
+          const fe=sd.getElementById('ef-entity');if(fe)fe.data={entity:''};
+          const fb=sd.getElementById('ef-base');if(fb)fb.data={...fb.data,entity:''};
+        }
+      });
+
+      const formEntity=sd.getElementById('ef-entity');
+      if(formEntity){
+        formEntity.hass=this._hass;
+        formEntity.schema=[{name:'entity',required:true,selector:{entity:{}}}];
+        formEntity.data={entity:e.entity};
+        formEntity.computeLabel=s=>{
+          const generic=this._hass?.localize(`ui.panel.lovelace.editor.card.generic.${s.name}`);
+          return generic||s.label||s.name;
+        };
+        formEntity.addEventListener('value-changed',ev=>{
+          const v=ev.detail.value.entity||'';
+          fireUpdate({entity:v});
+          formEntity.data={entity:v};
+          // Name-Vorschlag im entity_name-Selector aktuell halten
+          if(formBase)formBase.data={...formBase.data,entity:v};
+        });
+      }
+
+      this._wireTplField(sd,'ef-tpl','template','Jinja2 template (should return a number in W)',e.template,fireUpdate);
 
       const formPos=sd.getElementById('ef-pos');
       if(formPos){
@@ -479,48 +520,9 @@ class EnergyFlowCardEditor extends HTMLElement {
         formNeg.addEventListener('value-changed',ev=>{fireUpdate(ev.detail.value);});
       }
 
-      const syncSwatch=(swatch,picker,color)=>{
-        const valid=/^#[0-9a-fA-F]{6}$/i.test(color);
-        if(swatch){swatch.style.background=valid?color:'';swatch.classList.toggle('no-color',!valid);}
-        if(picker) picker.value=valid?color:'#ffffff';
-      };
-
-      // Wire color_positive picker + textfield
-      const pickerPos=sd.getElementById('picker-pos');
-      const swatchPos=sd.getElementById('swatch-pos');
-      const tfieldPos=sd.getElementById('tfield-pos');
-      const initPos=e.color_positive||'';
-      syncSwatch(swatchPos,pickerPos,initPos);
-      if(tfieldPos) tfieldPos.value=initPos;
-      pickerPos?.addEventListener('input',ev2=>{
-        const hex=ev2.target.value;
-        syncSwatch(swatchPos,null,hex);
-        if(tfieldPos) tfieldPos.value=hex;
-        fireUpdate({color_positive:hex});
-      });
-      tfieldPos?.addEventListener('change',ev2=>{
-        const val=ev2.target.value.trim();
-        syncSwatch(swatchPos,pickerPos,val);
-        fireUpdate({color_positive:val});
-      });
-
-      // Wire color_negative picker + textfield
-      const pickerNeg=sd.getElementById('picker-neg');
-      const swatchNeg=sd.getElementById('swatch-neg');
-      const tfieldNeg=sd.getElementById('tfield-neg');
-      const initNeg=e.color_negative||'';
-      syncSwatch(swatchNeg,pickerNeg,initNeg);
-      if(tfieldNeg) tfieldNeg.value=initNeg;
-      pickerNeg?.addEventListener('input',ev2=>{
-        const hex=ev2.target.value;
-        syncSwatch(swatchNeg,null,hex);
-        if(tfieldNeg) tfieldNeg.value=hex;
-        fireUpdate({color_negative:hex});
-      });
-      tfieldNeg?.addEventListener('change',ev2=>{
-        const val=ev2.target.value.trim();
-        syncSwatch(swatchNeg,pickerNeg,val);
-        fireUpdate({color_negative:val});
+      // Wire color picker + textfield for positive/negative
+      [['pos','color_positive'],['neg','color_negative']].forEach(([sfx,key])=>{
+        this._wireColorField(sd,sfx,e[key]||'',val=>fireUpdate({[key]:val}));
       });
     }
   }
@@ -528,7 +530,9 @@ class EnergyFlowCardEditor extends HTMLElement {
   // ── Daily Entities edit view ────────────────────────────────────────────────
   _renderEdit(){
     const sd=this.shadowRoot;
-    const e={entity:'',label:'',icon:'',color:'',secondary_entity:'',secondary_icon:'',col_span:'1-col',...(this._cfg.daily_entities||[])[this._editIdx]};
+    const e={entity:'',template:'',label:'',icon:'',color:'',secondary_entity:'',secondary_template:'',secondary_icon:'',secondary_no_unit:false,col_span:'1-col',...(this._cfg.daily_entities||[])[this._editIdx]};
+    const srcMode=e.template?'template':(this._deSrcMode||'entity');
+    const secMode=e.secondary_template?'template':(this._deSecSrcMode||'entity');
     const yamlLbl=this._hass?.localize('ui.panel.lovelace.editor.edit_card.show_code_editor')||'Code Editor';
     const guiLbl =this._hass?.localize('ui.panel.lovelace.editor.edit_card.show_visual_editor')||'Visual Editor';
 
@@ -543,11 +547,27 @@ class EnergyFlowCardEditor extends HTMLElement {
         </ha-icon-button>
       </div>
       ${this._yamlMode?'<ha-yaml-editor id="ye"></ha-yaml-editor>'
-        :'<ha-form id="ef"></ha-form><div class="color-field"><div class="cp-swatch no-color" id="swatch-color"><input type="color" id="picker-color" class="cp-hidden-input"></div><ha-textfield id="tfield-color" label="Color (e.g. #64B7F6)" style="flex:1;"></ha-textfield></div>'}`;
+        :`<ha-form id="df-src"></ha-form>
+          <div id="de-entity-wrap" class="${srcMode!=='entity'?'hidden':''}"><ha-form id="df-entity"></ha-form></div>
+          <div id="de-tpl-wrap" class="${srcMode!=='template'?'hidden':''}"><ha-form id="df-tpl"></ha-form></div>
+          <ha-form id="ef"></ha-form>
+          <div class="color-field">
+            <div class="cp-swatch no-color" id="swatch-color"><input type="color" id="picker-color" class="cp-hidden-input"></div>
+            <ha-textfield id="tfield-color" label="Color (e.g. #64B7F6)" style="flex:1;"></ha-textfield>
+          </div>
+          <div class="flow-heading-row">
+            <h3 class="flow-heading">Optional second value</h3>
+          </div>
+          <ha-form id="df2-src"></ha-form>
+          <div id="de2-entity-wrap" class="${secMode!=='entity'?'hidden':''}"><ha-form id="df2-entity"></ha-form></div>
+          <div id="de2-tpl-wrap" class="${secMode!=='template'?'hidden':''}"><ha-form id="df2-tpl"></ha-form></div>
+          <ha-form id="ef2"></ha-form>`}`;
 
     sd.getElementById('back').addEventListener('click',()=>{
       this._yamlMode=false;
       this._editIdx=null;
+      this._deSrcMode=null;
+      this._deSecSrcMode=null;
       this._render();
     });
     sd.getElementById('yaml-toggle').addEventListener('click',()=>{
@@ -567,12 +587,19 @@ class EnergyFlowCardEditor extends HTMLElement {
         });
       }
     }else{
+      // Helper: merge changed fields into current entry and fire
+      const fireUpdate=(changed)=>{
+        const arr=[...(this._cfg.daily_entities||[])];
+        arr[this._editIdx]={...(arr[this._editIdx]||{}),...changed};
+        this._fire({...this._cfg,daily_entities:arr});
+      };
+
       const form=sd.getElementById('ef');
       if(form){
         form.hass=this._hass;
         form.schema=this._eSchema();
-        const {color:_c,...eWithoutColor}=e;
-        form.data=eWithoutColor;
+        // entity nur als Kontext für entity_name/icon-Selector (kein Schema-Feld)
+        form.data={label:e.label,icon:e.icon,col_span:e.col_span,entity:e.entity};
         form.computeLabel=s=>{
           const generic=this._hass?.localize(`ui.panel.lovelace.editor.card.generic.${s.name}`);
           if(generic) return generic;
@@ -580,40 +607,89 @@ class EnergyFlowCardEditor extends HTMLElement {
           return(k&&this._hass?.localize(k))||s.label||s.name;
         };
         form.addEventListener('value-changed',ev=>{
-          const arr=[...(this._cfg.daily_entities||[])];
-          const existingColor=(arr[this._editIdx]||{}).color||'';
-          arr[this._editIdx]={...ev.detail.value,color:existingColor};
-          this._fire({...this._cfg,daily_entities:arr});
+          // entity strippen: wird ausschließlich über df-src/df-entity geschrieben
+          const{entity:_e,...newData}=ev.detail.value;
+          fireUpdate(newData);
+          form.data=ev.detail.value;
+        });
+      }
+
+      // ── Hauptwert: Value Source + Entity/Template ──
+      this._wireSrcSelect(sd,'df-src','de-entity-wrap','de-tpl-wrap',srcMode,m=>{
+        this._deSrcMode=m;
+        if(m==='entity'){
+          fireUpdate({template:''});
+          const ft=sd.getElementById('df-tpl');if(ft)ft.data={template:''};
+        }else{
+          fireUpdate({entity:''});
+          const fe=sd.getElementById('df-entity');if(fe)fe.data={entity:''};
+          if(form)form.data={...form.data,entity:''};
+        }
+      });
+
+      const dfEntity=sd.getElementById('df-entity');
+      if(dfEntity){
+        dfEntity.hass=this._hass;
+        dfEntity.schema=[{name:'entity',required:true,selector:{entity:{}}}];
+        dfEntity.data={entity:e.entity};
+        dfEntity.computeLabel=s=>{
+          const generic=this._hass?.localize(`ui.panel.lovelace.editor.card.generic.${s.name}`);
+          return generic||s.label||s.name;
+        };
+        dfEntity.addEventListener('value-changed',ev=>{
+          const v=ev.detail.value.entity||'';
+          fireUpdate({entity:v});
+          dfEntity.data={entity:v};
+          // Name-/Icon-Vorschlag im Hauptformular aktuell halten
+          if(form)form.data={...form.data,entity:v};
+        });
+      }
+
+      this._wireTplField(sd,'df-tpl','template','Jinja2 template (output shown as-is)',e.template,fireUpdate);
+
+      // ── Zweitwert: Value Source + Entity/Template ──
+      this._wireSrcSelect(sd,'df2-src','de2-entity-wrap','de2-tpl-wrap',secMode,m=>{
+        this._deSecSrcMode=m;
+        if(m==='entity'){
+          fireUpdate({secondary_template:''});
+          const ft=sd.getElementById('df2-tpl');if(ft)ft.data={secondary_template:''};
+        }else{
+          fireUpdate({secondary_entity:''});
+          const fe=sd.getElementById('df2-entity');if(fe)fe.data={...fe.data,secondary_entity:''};
+        }
+      });
+
+      const df2Entity=sd.getElementById('df2-entity');
+      if(df2Entity){
+        df2Entity.hass=this._hass;
+        df2Entity.schema=[
+          {name:'secondary_entity',label:'Entity',selector:{entity:{}}},
+          {name:'secondary_no_unit',label:'Hide unit',selector:{boolean:{}}},
+        ];
+        df2Entity.data={secondary_entity:e.secondary_entity,secondary_no_unit:e.secondary_no_unit||false};
+        df2Entity.computeLabel=s=>s.label??s.name;
+        df2Entity.addEventListener('value-changed',ev=>{
+          fireUpdate(ev.detail.value);
+          df2Entity.data=ev.detail.value;
+        });
+      }
+
+      this._wireTplField(sd,'df2-tpl','secondary_template','Jinja2 template (output shown as-is)',e.secondary_template,fireUpdate);
+
+      const form2=sd.getElementById('ef2');
+      if(form2){
+        form2.hass=this._hass;
+        form2.schema=[{name:'secondary_icon',label:'Icon',selector:{icon:{}}}];
+        form2.data={secondary_icon:e.secondary_icon};
+        form2.computeLabel=s=>s.label??s.name;
+        form2.addEventListener('value-changed',ev=>{
+          fireUpdate(ev.detail.value);
+          form2.data=ev.detail.value;
         });
       }
 
       // Wire color picker + textfield
-      const pickerColor=sd.getElementById('picker-color');
-      const swatchColor=sd.getElementById('swatch-color');
-      const tfieldColor=sd.getElementById('tfield-color');
-      const initColor=e.color||'';
-      const syncSwatchC=(swatch,picker,color)=>{
-        const valid=/^#[0-9a-fA-F]{6}$/i.test(color);
-        if(swatch){swatch.style.background=valid?color:'';swatch.classList.toggle('no-color',!valid);}
-        if(picker) picker.value=valid?color:'#ffffff';
-      };
-      syncSwatchC(swatchColor,pickerColor,initColor);
-      if(tfieldColor) tfieldColor.value=initColor;
-      pickerColor?.addEventListener('input',ev2=>{
-        const hex=ev2.target.value;
-        syncSwatchC(swatchColor,null,hex);
-        if(tfieldColor) tfieldColor.value=hex;
-        const arr=[...(this._cfg.daily_entities||[])];
-        arr[this._editIdx]={...arr[this._editIdx],color:hex};
-        this._fire({...this._cfg,daily_entities:arr});
-      });
-      tfieldColor?.addEventListener('change',ev2=>{
-        const val=ev2.target.value.trim();
-        syncSwatchC(swatchColor,pickerColor,val);
-        const arr=[...(this._cfg.daily_entities||[])];
-        arr[this._editIdx]={...arr[this._editIdx],color:val};
-        this._fire({...this._cfg,daily_entities:arr});
-      });
+      this._wireColorField(sd,'color',e.color||'',val=>fireUpdate({color:val}));
     }
   }
 
@@ -633,7 +709,6 @@ class EnergyFlowCardEditor extends HTMLElement {
 
   _evSchemaBase(usedPositions=[], currentPos=''){
     return[
-      {name:'entity',   required:true, selector:{entity:{}}},
       {name:'position', label:'Position', required:true, selector:{select:{options:
         PILL_POSITIONS.map(p=>({value:p.value,label:p.label,disabled:p.value!=='hidden'&&p.value!==currentPos&&usedPositions.includes(p.value)}))
       }}},
@@ -655,13 +730,9 @@ class EnergyFlowCardEditor extends HTMLElement {
 
   _eSchema(){
     return[
-      {name:'entity',           required:true,                     selector:{entity:{}}},
-      {name:'label',            selector:{entity_name:{}},         context:{entity:'entity'}},
-      {name:'icon',             selector:{icon:{}},                context:{icon_entity:'entity'}},
-      {name:'secondary_entity', label:'Additional Entity (Optional)',selector:{entity:{}}},
-      {name:'secondary_icon',   label:'Additional Entity Symbol',  selector:{icon:{}}},
-      {name:'secondary_no_unit',label:'Hide unit for additional entity', selector:{boolean:{}}},
-      {name:'col_span',         label:'Width',                     selector:{select:{options:[
+      {name:'label',    selector:{entity_name:{}}, context:{entity:'entity'}},
+      {name:'icon',     selector:{icon:{}},        context:{icon_entity:'entity'}},
+      {name:'col_span', label:'Width', selector:{select:{options:[
         {value:'1-col',label:'Half Width (1 Column)'},
         {value:'2-col',label:'Full Width (2 Columns)'},
       ]}}},
@@ -687,6 +758,62 @@ class EnergyFlowCardEditor extends HTMLElement {
     return m?m.label:pos;
   }
 
+  // Verdrahtet ein "Value Source"-Box-Select, das Entity-/Template-Wrap umschaltet
+  _wireSrcSelect(sd,srcId,entityWrapId,tplWrapId,mode,onChange){
+    const f=sd.getElementById(srcId);
+    if(!f) return;
+    f.hass=this._hass;
+    f.schema=[{name:'source',label:'Value Source',selector:{select:{mode:'box',options:[
+      {value:'entity',  label:'Entity'},
+      {value:'template',label:'Jinja2 template'},
+    ]}}}];
+    f.data={source:mode};
+    f.computeLabel=s=>s.label??s.name;
+    f.addEventListener('value-changed',ev=>{
+      const m=ev.detail.value.source||'entity';
+      sd.getElementById(entityWrapId)?.classList.toggle('hidden',m!=='entity');
+      sd.getElementById(tplWrapId)?.classList.toggle('hidden',m!=='template');
+      onChange(m);
+    });
+  }
+
+  // Verdrahtet ein einzelnes Jinja2-Template-Multiline-Feld
+  _wireTplField(sd,id,key,label,init,fire){
+    const f=sd.getElementById(id);
+    if(!f) return;
+    f.hass=this._hass;
+    f.schema=[{name:key,label,selector:{text:{multiline:true}}}];
+    f.data={[key]:init};
+    f.computeLabel=s=>s.label??s.name;
+    f.addEventListener('value-changed',ev=>{fire({[key]:ev.detail.value[key]||''});});
+  }
+
+  _syncSwatch(swatch,picker,color){
+    const valid=/^#[0-9a-fA-F]{6}$/i.test(color);
+    if(swatch){swatch.style.background=valid?color:'';swatch.classList.toggle('no-color',!valid);}
+    if(picker) picker.value=valid?color:'#ffffff';
+  }
+
+  // Wires a color square (input[type=color]) + ha-textfield pair by id suffix
+  _wireColorField(sd,sfx,init,onChange){
+    const picker=sd.getElementById('picker-'+sfx);
+    const swatch=sd.getElementById('swatch-'+sfx);
+    const tfield=sd.getElementById('tfield-'+sfx);
+    this._syncSwatch(swatch,picker,init);
+    if(tfield) tfield.value=init;
+    picker?.addEventListener('input',ev=>{
+      const hex=ev.target.value;
+      this._syncSwatch(swatch,null,hex);
+      if(tfield) tfield.value=hex;
+      onChange(hex);
+    });
+    tfield?.addEventListener('change',ev=>{
+      const val=ev.target.value.trim();
+      this._syncSwatch(swatch,picker,val);
+      onChange(val);
+    });
+  }
+
   _esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
   _css(){
@@ -702,12 +829,16 @@ ha-form{--ha-form-grid-padding:0;}
 .ename{display:block;font-size:14px;color:var(--primary-text-color);}
 .esub{display:block;font-size:12px;color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .ibtn{--mdc-icon-button-size:36px;--mdc-icon-size:18px;color:var(--secondary-text-color);flex-shrink:0;}
-ha-entity-picker{display:block;margin-top:20px}
+.hidden{display:none;}
+#ef-src,#df-src,#df2-src{display:block;margin-bottom:24px;}
+#ev-entity-wrap,#ev-tpl-wrap,#de-entity-wrap,#de-tpl-wrap,#de2-entity-wrap,#de2-tpl-wrap{margin-bottom:24px;}
+.addbtn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:4px;padding:10px 16px;background:none;border:1px solid var(--divider-color,rgba(127,127,127,.4));border-radius:var(--ha-border-radius-sm,8px);color:var(--primary-color);font-size:14px;font-weight:500;font-family:inherit;cursor:pointer;}
+.addbtn:hover{background:rgba(127,127,127,.08);}
+.addbtn ha-icon{--mdc-icon-size:18px;}
 .edit-hdr{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;}
 .back-title{display:flex;align-items:center;gap:4px;font-size:var(--ha-font-size-l,1.1em);font-weight:500;}
 .flow-heading-row{display:flex;align-items:center;gap:8px;margin:16px 0 4px;}
 .flow-heading{margin:0;font-size:var(--ha-font-size-l,1em);font-weight:500;color:var(--primary-text-color);}
-.color-swatch{display:inline-block;width:18px;height:18px;border-radius:4px;border:1px solid var(--divider-color,rgba(128,128,128,.4));flex-shrink:0;background-image:linear-gradient(45deg,#aaa 25%,transparent 25%,transparent 75%,#aaa 75%),linear-gradient(45deg,#aaa 25%,#fff 25%,#fff 75%,#aaa 75%);background-size:6px 6px;background-position:0 0,3px 3px;}
 .color-field{display:flex;gap:8px;align-items:center;margin:4px 0 8px;}
 .cp-swatch{width:36px;height:36px;flex-shrink:0;border-radius:4px;border:1px solid var(--divider-color,rgba(0,0,0,0.12));cursor:pointer;position:relative;overflow:hidden;}
 .cp-swatch.no-color{background:repeating-linear-gradient(-45deg,rgba(120,120,120,0.5) 0px,rgba(120,120,120,0.5) 4px,transparent 4px,transparent 8px);}
@@ -733,16 +864,70 @@ class EnergyFlowCard extends HTMLElement {
   constructor(){
     super();this.attachShadow({mode:'open'});
     this._cfg={};this._hass=null;this._ok=false;
-    this._prevStates=null;this._lastNight=undefined;this._prevStateObjs={};
+    this._prevStates=null;this._lastNight=undefined;this._prevStateObjs={};this._evDirs={};this._watchIds=[];
+    this._tpl={};this._tplVals={};
+    this._animEpoch=null;this._evDelayAdj={};this._evAnimOn={};
   }
-  setConfig(c){this._cfg=c;this._ok=false;this._prevStates=null;this._lastNight=undefined;this._prevStateObjs={};this._build();}
-  set hass(h){this._hass=h;if(this._ok&&this._hasRelevantChange())this._upd();}
+  setConfig(c){this._cfg=c;this._watchIds=this._calcWatchIds();this._ok=false;this._prevStates=null;this._lastNight=undefined;this._prevStateObjs={};this._evDirs={};this._animEpoch=null;this._evDelayAdj={};this._evAnimOn={};this._build();this._syncTplSubs();}
+  set hass(h){const first=!this._hass&&h;this._hass=h;if(first)this._syncTplSubs();if(this._ok&&this._hasRelevantChange())this._upd();}
+  connectedCallback(){
+    // disconnectedCallback baut Subscriptions ab → nach DOM-Move/Tab-Wechsel neu aufbauen.
+    // Re-Attach startet alle CSS-Animationen gleichzeitig neu → Delay-Epoch mit zurücksetzen
+    this._animEpoch=null;this._evDelayAdj={};this._evAnimOn={};
+    if(this._ok&&this._hass){this._syncTplSubs();this._upd();}
+  }
+  disconnectedCallback(){
+    Object.keys(this._tpl).forEach(k=>this._unsubTpl(k));
+  }
+  _syncTplSubs(){
+    if(!this._hass?.connection) return;
+    const want={};
+    this._getEnergyValues().forEach((e,i)=>{if(e.template)want['ev'+i]=e.template;});
+    this._getDailyEntities().forEach((e,i)=>{
+      if(e.template)want['de'+i]=e.template;
+      if(e.secondary_template)want['ds'+i]=e.secondary_template;
+    });
+    Object.keys(this._tpl).forEach(k=>{if(!want[k])this._unsubTpl(k);});
+    Object.keys(want).forEach(k=>this._subTpl(k,want[k]));
+  }
+  _unsubTpl(key){
+    const t=this._tpl[key];
+    if(t?.unsub)t.unsub();
+    // Slot immer leeren (active + token): ein noch laufendes Subscribe erkennt
+    // am fehlenden Token, dass es veraltet ist, und räumt sich selbst ab
+    this._tpl[key]={};
+    delete this._tplVals[key];
+  }
+  async _subTpl(key,template){
+    if(template===this._tpl[key]?.active) return;
+    this._unsubTpl(key);
+    const token={};
+    this._tpl[key]={active:template,token};
+    try{
+      const unsub=await this._hass.connection.subscribeMessage(msg=>{
+        if(msg.result!==undefined){
+          this._tplVals[key]=String(msg.result).trim();
+          if(this._ok)this._upd();
+        }else if(msg.error){
+          console.error('energy-flow-card template ('+key+'):',msg.error);
+        }
+      },{type:'render_template',template,variables:{},report_errors:true});
+      if(this._tpl[key]?.token===token) this._tpl[key].unsub=unsub;
+      else unsub();
+    }catch(err){
+      console.error('energy-flow-card: template subscription ('+key+') failed',err);
+      if(this._tpl[key]?.token===token) this._tpl[key].active=null;
+    }
+  }
+  _calcWatchIds(){
+    const c=this._cfg,eids=new Set();
+    if(c.entity_sun)eids.add(c.entity_sun);
+    (c.energy_values||[]).forEach(e=>{if(e.entity)eids.add(e.entity);});
+    (c.daily_entities||[]).forEach(e=>{if(e.entity)eids.add(e.entity);if(e.secondary_entity)eids.add(e.secondary_entity);});
+    return[...eids];
+  }
   _hasRelevantChange(){
-    const h=this._hass,c=this._cfg;
-    const eids=[];
-    if(c.entity_sun)eids.push(c.entity_sun);
-    (c.energy_values||[]).forEach(e=>{if(e.entity)eids.push(e.entity);});
-    (c.daily_entities||[]).forEach(e=>{if(e.entity)eids.push(e.entity);if(e.secondary_entity)eids.push(e.secondary_entity);});
+    const h=this._hass,eids=this._watchIds;
     const prev=this._prevStates;
     let changed=!prev;
     if(prev){for(let j=0;j<eids.length;j++){if(h.states[eids[j]]?.state!==prev[eids[j]]){changed=true;break;}}}
@@ -764,14 +949,16 @@ class EnergyFlowCard extends HTMLElement {
   }
   _num(e,f=0){if(!e||!this._hass)return f;const v=parseFloat(this._hass.states[e]?.state);return isNaN(v)?f:v;}
   _fmtW(v){return Math.abs(v)>=1000?(v/1000).toFixed(2)+' kW':Math.round(v)+' W';}
-  _fmtVal(eid){
-    const raw=this._hass?.states[eid]?.state??'';
+  _fmtVal(eid,hideUnit=false){
+    const st=this._hass?.states[eid];
+    const raw=st?.state??'';
     const num=parseFloat(raw);
-    const unit=this._hass?.states[eid]?.attributes?.unit_of_measurement||'';
+    const unit=hideUnit?'':(st?.attributes?.unit_of_measurement||'');
     const isFloat=!isNaN(num)&&raw.trim()!==''&&raw.includes('.')&&isFinite(Number(raw));
-    return isFloat?num.toFixed(2)+(unit?' '+unit:''):raw+(unit?' '+unit:'');
+    return(isFloat?num.toFixed(2):raw)+(unit?' '+unit:'');
   }
   _set(id,t){const el=this.shadowRoot.getElementById(id);if(el&&el.textContent!==t)el.textContent=t;}
+  _esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
   _build(){
     const sd=this.shadowRoot,d=this._hasD();
@@ -785,7 +972,7 @@ class EnergyFlowCard extends HTMLElement {
       if(e.position==='hidden'||!e.position) return '';
       const pos=PILL_POS_CSS[e.position]||'left:12px;top:12px;';
       return`<div class="pill" id="pill-ev-${i}" style="${pos}">
-        <span class="pt">${e.label||''}</span>
+        <span class="pt">${this._esc(e.label||'')}</span>
         <span class="pv" id="v-ev-${i}">\u2013</span>
       </div>`;
     }).join('');
@@ -795,7 +982,7 @@ class EnergyFlowCard extends HTMLElement {
       '<ha-card id="card"><div class="wrap" id="wrap">'+
         '<div class="flow">'+
           '<img id="bg" class="bg">'+
-          '<svg class="lines" viewBox="0 0 '+(this._cfg.viewbox_width||'1676')+' '+(this._cfg.viewbox_height||'2058')+'" preserveAspectRatio="xMidYMid meet">'+
+          '<svg class="lines" viewBox="0 0 '+this._esc(this._cfg.viewbox_width||'1676')+' '+this._esc(this._cfg.viewbox_height||'2058')+'" preserveAspectRatio="xMidYMid meet">'+
             this._defs(ev)+pathGroups+
           '</svg>'+
           '<div class="pills">'+pills+'</div>'+
@@ -815,23 +1002,23 @@ class EnergyFlowCard extends HTMLElement {
     this._ok=true;this._upd();
   }
 
-  _pg(cls,d){return'<g class="ln '+cls+'">'+Array.from({length:10},(_,i)=>'<path class="p'+i+'" d="'+d+'" fill="none"/>').join('')+'</g>';}
+  _pg(cls,d){const dd=this._esc(d);return'<g class="ln '+cls+'">'+Array.from({length:10},(_,i)=>'<path class="p'+i+'" d="'+dd+'" fill="none"/>').join('')+'</g>';}
 
   _dailyH(){
     const entities=this._getDailyEntities();
     const rows=entities.map((e,i)=>{
-      const label=e.label||e.entity||'';
-      const color=e.color||'';
-      const showSub=!!e.secondary_entity;
+      const label=this._esc(e.label||e.entity||'');
+      const color=this._esc(e.color||'');
+      const showSub=!!(e.secondary_entity||e.secondary_template);
       const col2=e.col_span==='2-col';
       const vid='de-'+i, sid='ds-'+i;
       const iconEl=e.icon
-        ?'<ha-icon icon="'+e.icon+'" style="--mdc-icon-size:22px;color:'+color+';flex-shrink:0"></ha-icon>'
+        ?'<ha-icon icon="'+this._esc(e.icon)+'" style="--mdc-icon-size:22px;color:'+color+';flex-shrink:0"></ha-icon>'
         :'<ha-state-icon id="di-'+i+'" style="--mdc-icon-size:22px;color:'+color+';flex-shrink:0"></ha-state-icon>';
       let inner;
       if(showSub){
         const pre=e.secondary_icon
-          ?'<ha-icon icon="'+e.secondary_icon+'" style="--mdc-icon-size:11px;opacity:.55;vertical-align:baseline;position:relative;top:-1px;margin-right:2px"></ha-icon>'
+          ?'<ha-icon icon="'+this._esc(e.secondary_icon)+'" style="--mdc-icon-size:11px;opacity:.55;vertical-align:baseline;position:relative;top:-1px;margin-right:2px"></ha-icon>'
           :'';
         inner='<div class="er">'+
           '<span class="ev" id="'+vid+'">\u2013</span>'+
@@ -873,23 +1060,38 @@ class EnergyFlowCard extends HTMLElement {
     const pause=Math.max(0,isNaN(pauseRaw)?3.5:pauseRaw);
     let animCss='';
 
+    if(this._animEpoch==null)this._animEpoch=performance.now();
     ev.forEach((e,i)=>{
-      const val=this._num(e.entity);
+      let val;
+      if(e.template){const t=parseFloat(this._tplVals['ev'+i]);val=isNaN(t)?0:t;}
+      else val=this._num(e.entity);
       this._set('v-ev-'+i,this._fmtW(val));
 
       // Switch path when direction changes (pos ↔ neg)
-      const dirKey='_evdir'+i;
       const dir=val>=0?'pos':'neg';
-      if(dir!==this[dirKey]){
-        this[dirKey]=dir;
+      const dirChanged=dir!==this._evDirs[i];
+      if(dirChanged){
+        this._evDirs[i]=dir;
         const path=dir==='pos'?(e.path_positive||''):(e.path_negative||e.path_positive||'');
         if(path) sd.querySelectorAll('.lev'+i+' path').forEach(p=>p.setAttribute('d',path));
       }
 
-      if(on(val)){
+      const isOn=on(val);
+      // Animations-Neustart (Richtungswechsel oder Wiedereinschalten): Der Browser startet
+      // die Animation zur Jetzt-Zeit, die konfigurierten Delays staffeln aber nur relativ
+      // zum gemeinsamen Start. Delay um die verstrichene Zeit seit Epoch korrigieren →
+      // Phase bleibt identisch zu "alle Flows starteten gemeinsam zur Epoch"
+      if(isOn&&(dirChanged||!this._evAnimOn[i])){
+        const cfgRaw=dir==='pos'?(e.delay_positive||''):(e.delay_negative||e.delay_positive||'');
+        const cfgD=parseFloat(cfgRaw);
+        const base=isNaN(cfgD)?0:cfgD;
+        this._evDelayAdj[i]=(base-(performance.now()-this._animEpoch)/1000).toFixed(3)+'s';
+      }
+      this._evAnimOn[i]=isOn;
+
+      if(isOn){
         const color=val>=0?e.color_positive:(e.color_negative||e.color_positive||'');
-        const delay=val>=0?(e.delay_positive||''):(e.delay_negative||'');
-        animCss+=this._dot('lev'+i,color,'ev'+i,delay,dir,pause);
+        animCss+=this._dot('lev'+i,color,'ev'+i,this._evDelayAdj[i]||'0s',dir,pause);
       }else{
         animCss+='.lines .lev'+i+' path{stroke:transparent;animation:none;}';
       }
@@ -907,15 +1109,10 @@ class EnergyFlowCard extends HTMLElement {
         daily.querySelectorAll('.ep:not(.ep-sp)').forEach(ep=>{ep.style.background=n?'rgba(255,255,255,0.08)':'rgba(255,255,255,0.85)';});
       }
       this._getDailyEntities().forEach((e,i)=>{
-        if(e.entity) this._set('de-'+i,this._fmtVal(e.entity));
-        if(e.secondary_entity){
-          const raw=this._hass?.states[e.secondary_entity]?.state??'';
-          const num=parseFloat(raw);
-          const su=e.secondary_no_unit?'':(this._hass?.states[e.secondary_entity]?.attributes?.unit_of_measurement||'');
-          const isFloat=!isNaN(num)&&raw.trim()!==''&&raw.includes('.')&&isFinite(Number(raw));
-          const formatted=isFloat?num.toFixed(2)+(su?' '+su:''):raw+(su?' '+su:'');
-          this._set('ds-'+i,formatted);
-        }
+        if(e.template) this._set('de-'+i,this._tplVals['de'+i]??'–');
+        else if(e.entity) this._set('de-'+i,this._fmtVal(e.entity));
+        if(e.secondary_template) this._set('ds-'+i,this._tplVals['ds'+i]??'–');
+        else if(e.secondary_entity) this._set('ds-'+i,this._fmtVal(e.secondary_entity,e.secondary_no_unit));
         if(!e.icon){
           const si=sd.getElementById('di-'+i);
           if(si){
@@ -932,6 +1129,7 @@ class EnergyFlowCard extends HTMLElement {
 
   _dot(cls,color,fid,delay,dir='',pause=1){
     if(!color) return'.lines .'+cls+' path{stroke:transparent;animation:none;}';
+    delay=delay||'0s';
     const speed=967,d=20,t=[200,300,400,480,560,640,720,800,880];
     const gap=pause*speed,tot=d+t[8]+gap,sp=(tot/speed).toFixed(2)+'s';
     const kf='kf'+cls.replace(/\W/g,'')+dir;
@@ -986,4 +1184,4 @@ class EnergyFlowCard extends HTMLElement {
 customElements.define('energy-flow-card',EnergyFlowCard);
 window.customCards=window.customCards||[];
 window.customCards.push({type:'energy-flow-card',name:'Energy Flow Card',description:'Animated energy flow with configurable energy value pills'});
-console.info('%c ENERGY-FLOW-CARD %c v1.20.5','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
+console.info('%c ENERGY-FLOW-CARD %c v1.21.0','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
