@@ -41,7 +41,7 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 
 1. Copy `energy-flow-card.js`, `isometric.svg` and `isometric_night.svg` into `/config/www/energyflow/` on your Home Assistant instance
 2. Go to **Settings → Dashboards → ⋮ → Resources → Add**
-3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.21.0` and type to **JavaScript module**
+3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.21.1` and type to **JavaScript module**
 4. Reload your browser
 5. Use settings from example below to start
 
@@ -191,10 +191,10 @@ Templates are evaluated server-side and update automatically. Energy flow templa
 
 | Option | Type | Description |
 |---|---|---|
-| `entity` | entity | Sensor entity to read the value from (alternative to `template`) |
+| `entity` | entity | Power sensor to read the value from (alternative to `template`). Values in `kW`, `MW` or `mW` are converted to W automatically based on the entity's unit |
 | `template` | string | Jinja2 template returning a number in W (alternative to `entity`, e.g. `{{ states('sensor.a') \| float(0) + states('sensor.b') \| float(0) }}`). Evaluated server-side and updates automatically. |
 | `position` | string | Pill position: `hidden`, `top-left`, `top-center`, `top-right`, `middle-left`, `middle-right`, `bottom-left`, `bottom-center`, `bottom-right`. Each visible position can only be used once. Use `hidden` (default) to run the flow animation without showing a pill. |
-| `label` | string | Label shown above the value in the pill |
+| `label` | string / name | Label shown above the value in the pill. Custom text, or a composed name (entity / device / area) from the editor's name picker |
 | `color_positive` | string | Hex color for positive flow animation (e.g. `#64B7F6`) |
 | `path_positive` | string | SVG path `d` attribute for positive flow direction |
 | `delay_positive` | string | CSS animation delay for positive flow (e.g. `0s`, `-0.8s`) |
@@ -208,7 +208,7 @@ Templates are evaluated server-side and update automatically. Energy flow templa
 |---|---|---|
 | `entity` | entity | Sensor entity for the value (alternative to `template`) |
 | `template` | string | Jinja2 template for the value (alternative to `entity`). Evaluated server-side, updates automatically; the output is shown as-is (include the unit in the template if desired) |
-| `label` | string | Display label (leave empty to use friendly name) |
+| `label` | string / name | Display label: custom text or a composed name from the editor's name picker (leave empty to use the friendly name) |
 | `icon` | string | Icon (e.g. `mdi:solar-power`). If omitted, the entity's own icon is used automatically |
 | `color` | string | Icon color (hex) |
 | `secondary_entity` | entity | Optional second value shown small beside the main value (alternative to `secondary_template`) |
@@ -348,6 +348,15 @@ If your source path contains multiple subpaths, split them into individual `<pat
 ---
 
 ## Changelog
+
+### v1.21.1
+- **Fix: Composed names showed `[object Object]`** — names chosen in "Composed" mode of the name picker (e.g. device + entity) are stored as objects, not text. Pills, additional values and the editor list now resolve them the same way Home Assistant's own cards do.
+- **Fix: Power sensors in kW** — energy flow entities reporting in `kW` (also `MW`, `mW`) were read as W, so `1.2 kW` showed as `1 W` and never animated. Values are now converted to W based on the entity's unit.
+- **Fix: Additional value label fallback** — without a label the tile showed the raw entity ID instead of the friendly name, as documented.
+- **Change: Localized number formatting** — additional values now use Home Assistant's own state formatting: the display precision set for the entity, the locale's decimal separator and translated states such as "Unavailable" (previously e.g. `unavailable kWh`). Pill values follow the number format from your user profile. Visible change: German setups now show `2,33 kWh` / `1,20 kW` instead of `2.33 kWh` / `1.20 kW`.
+- **Editor: No redundant re-renders** — the editor no longer rebuilds itself when Home Assistant echoes back its own change, so the view is not replaced under the cursor after leaving a text field, and sorting or deleting renders once instead of twice.
+- **Editor: General Settings only store what you change** — previously any change in General Settings wrote all nine settings (including the default gradients) into the YAML. Now only the edited field is stored; clearing a field falls back to the default, and "No border" removes `show_border`. Existing configs keep their values — delete unneeded default entries in YAML if you want a clean config.
+- **Performance: Fewer SVG filter passes** — the glow is applied once per flow trail instead of on each of its ten paths (two filtered elements per flow instead of ten, shared filter definitions). The look is unchanged.
 
 ### v1.21.0
 - **New: Jinja2 template value sources** — every energy flow and every additional value (main and optional second value) can read its value from a Jinja2 template instead of an entity, e.g. to combine two sensors: `{{ states('sensor.a') | float(0) + states('sensor.b') | float(0) }}`. Templates are evaluated server-side and update automatically. Energy flow templates must return a number in W; additional value templates are shown as-is (include the unit in the template if desired). The editor offers a "Value Source" selector (Entity / Jinja2 template) per value.

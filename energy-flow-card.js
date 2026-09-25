@@ -1,4 +1,4 @@
-// energy-flow-card.js  v1.21.0
+// energy-flow-card.js  v1.21.1
 
 // Constants
 const PILL_POSITIONS=[
@@ -31,6 +31,42 @@ const _L={
   icon:   'ui.panel.lovelace.editor.card.generic.icon',
 };
 
+const GS_DEFAULTS={
+  minmax_min_width:'175px',
+  flow_height:     '265px',
+  svg_height:      '',
+  gradient_day:    'linear-gradient(to bottom,#2A75F6 0%,#FFFFFF 67%,#D5D5D5 100%)',
+  gradient_night:  'linear-gradient(to bottom,#0A1929 0%,#1A2332 67%,#2C3440 100%)',
+  viewbox_width:   '1676',
+  viewbox_height:  '2058',
+  animation_pause: '3.5s',
+};
+
+const POWER_SCALE={mW:0.001,kW:1000,MW:1e6,GW:1e9};
+
+const TRAIL_ALPHA_TABLE='0 0.013 0.027 0.041 0.055 0.071 0.088 0.105 0.123 0.144 0.166 0.187 0.214 0.245 0.276 0.309 0.36 0.412 0.492 0.598 1';
+
+// entity_name selector: string for custom text, EntityNameItem or EntityNameItem[] for composed names
+const resolveName=(hass,label,eid)=>{
+  if(label==null||label==='') return '';
+  if(typeof label==='string') return label;
+  const st=eid?hass?.states?.[eid]:null;
+  if(st&&typeof hass.formatEntityName==='function'){
+    try{return hass.formatEntityName(st,label);}catch(_){/* fall through to text items */}
+  }
+  return(Array.isArray(label)?label:[label]).filter(x=>x?.type==='text').map(x=>x.text).join(' ');
+};
+
+// Mirrors HA's number_format setting (src/common/number/format_number.ts)
+const _numFormatters={};
+const numFmt=(hass,digits)=>{
+  const loc=hass?.locale||{},nf=loc.number_format;
+  const lang={comma_decimal:['en-US','en'],decimal_comma:['de','es','it'],space_comma:['fr','sv','cs'],quote_decimal:['de-CH'],none:'en-US'}[nf]
+    ??(nf==='system'?undefined:loc.language);
+  const key=String(lang)+'|'+nf+'|'+digits;
+  return _numFormatters[key]||(_numFormatters[key]=new Intl.NumberFormat(lang,{minimumFractionDigits:digits,maximumFractionDigits:digits,useGrouping:nf!=='none'}));
+};
+
 class EnergyFlowCardEditor extends HTMLElement {
   constructor(){
     super();
@@ -41,7 +77,6 @@ class EnergyFlowCardEditor extends HTMLElement {
     this._yamlMode=false;
     this._evEditIdx=null;
     this._evYamlMode=false;
-    this._mainEditing=false;
     this._gsPending=null;
     this._gfPending=null;
     this._evSrcMode=null;
@@ -66,8 +101,12 @@ class EnergyFlowCardEditor extends HTMLElement {
   }
 
   setConfig(c){
+    // HA echoes our own config-changed back asynchronously; re-rendering then would only
+    // replace the DOM under the user's cursor (lost focus, swallowed clicks)
+    const echo=JSON.stringify(c)===JSON.stringify(this._cfg);
     this._cfg={...c};
-    if(this._editIdx===null && this._evEditIdx===null && !this._mainEditing){
+    if(echo) return;
+    if(this._editIdx===null && this._evEditIdx===null){
       const scroller=this._findScroller();
       const saved=scroller?scroller.scrollTop:null;
       this._render();
@@ -108,7 +147,7 @@ class EnergyFlowCardEditor extends HTMLElement {
     const evEntries=this._cfg.energy_values||[];
     const evRows=evEntries.map((e,i)=>{
       const src=e.entity||(e.template?'Jinja2 Template':'');
-      const name=e.label||(this._hass?.states[e.entity]?.attributes?.friendly_name)||src||'…';
+      const name=resolveName(this._hass,e.label,e.entity)||(this._hass?.states[e.entity]?.attributes?.friendly_name)||src||'…';
       const posLbl=this._posLabel(e.position||'');
       const color=e.color_positive||'';
       return`<div class="erow" data-idx="${i}">
@@ -134,7 +173,7 @@ class EnergyFlowCardEditor extends HTMLElement {
       const color=e.color||'';
       const stObj=this._hass?.states[e.entity];
       const sub=e.entity||(e.template?'Jinja2 Template':'');
-      const name=e.label||(stObj?.attributes?.friendly_name)||sub||'…';
+      const name=resolveName(this._hass,e.label,e.entity)||(stObj?.attributes?.friendly_name)||sub||'…';
       const iconEl=e.icon
         ?`<ha-icon icon="${this._esc(e.icon)}" style="color:${this._esc(color)};--mdc-icon-size:24px;flex-shrink:0;margin:0 2px"></ha-icon>`
         :`<ha-state-icon id="dei-${i}" style="color:${this._esc(color)};--mdc-icon-size:24px;flex-shrink:0;margin:0 2px"></ha-state-icon>`;
@@ -189,7 +228,9 @@ class EnergyFlowCardEditor extends HTMLElement {
     if(form){
       form.hass=this._hass;
       form.schema=this._gSchema(this._cfg.entity_sun||'');
-      form.data={...this._cfg};
+      // Only this form's keys: ha-form returns its whole data object, a full config
+      // snapshot would write stale values of other forms back
+      form.data=Object.fromEntries(['svg_day','svg_night','mode','entity_sun'].filter(k=>k in this._cfg).map(k=>[k,this._cfg[k]]));
       form.computeLabel=s=>s.label??s.name;
 
       // Text fields are buffered – no immediate _fire while typing
@@ -198,14 +239,11 @@ class EnergyFlowCardEditor extends HTMLElement {
       const gfFlush=()=>{
         if(!this._gfPending) return;
         const d=this._gfPending; this._gfPending=null;
-        // _mainEditing=true: prevents setConfig from re-rendering (keeps DOM stable)
-        this._mainEditing=true;
         this._fire(d);
-        this._mainEditing=false;
       };
 
       form.addEventListener('value-changed',ev=>{
-        const d={...this._cfg,...ev.detail.value,daily_entities:this._cfg.daily_entities,energy_values:this._cfg.energy_values};
+        const d={...this._cfg,...ev.detail.value};
         let modeForced=false;
         if(!d.entity_sun && d.mode==='auto'){d.mode='day';modeForced=true;}
 
@@ -219,9 +257,7 @@ class EnergyFlowCardEditor extends HTMLElement {
         } else {
           // Non-text (entity picker, select): fire immediately
           this._gfPending=null;
-          this._mainEditing=true;
           this._fire(d);
-          this._mainEditing=false;
           if(modeForced){
             this._renderMain();
           } else {
@@ -332,31 +368,38 @@ class EnergyFlowCardEditor extends HTMLElement {
     if(gsForm){
       gsForm.hass=this._hass;
       gsForm.schema=this._gsSchema();
-      gsForm.data={
-        minmax_min_width:this._cfg.minmax_min_width||'175px',
-        flow_height:     this._cfg.flow_height     ||'265px',
-        svg_height:      this._cfg.svg_height      ||'',
-        gradient_day:    this._cfg.gradient_day    ||'linear-gradient(to bottom,#2A75F6 0%,#FFFFFF 67%,#D5D5D5 100%)',
-        gradient_night:  this._cfg.gradient_night  ||'linear-gradient(to bottom,#0A1929 0%,#1A2332 67%,#2C3440 100%)',
-        viewbox_width:   this._cfg.viewbox_width   ||'1676',
-        viewbox_height:  this._cfg.viewbox_height  ||'2058',
-        animation_pause: this._cfg.animation_pause ?? '3.5s',
-        show_border:     this._cfg.show_border===true?'show':'hide',
-      };
+      // Defaults are displayed, but only fields the user actually changes are written
+      const gsShown={show_border:this._cfg.show_border===true?'show':'hide'};
+      Object.keys(GS_DEFAULTS).forEach(k=>{
+        const v=this._cfg[k];
+        gsShown[k]=(v!=null&&v!=='')?v:GS_DEFAULTS[k];
+      });
+      gsForm.data={...gsShown};
       gsForm.computeLabel=s=>s.label??s.name;
 
       const gsFlush=()=>{
         if(!this._gsPending) return;
         const d=this._gsPending; this._gsPending=null;
-        this._mainEditing=true;
         this._fire(d);
-        this._mainEditing=false;
       };
       gsForm.addEventListener('value-changed',ev=>{
-        const val={...ev.detail.value};
-        if('show_border' in val) val.show_border=val.show_border==='show';
-        this._gsPending={...this._cfg,...val};
-        if('show_border' in ev.detail.value) gsFlush();
+        const val=ev.detail.value;
+        const next={...(this._gsPending||this._cfg)};
+        let borderChanged=false;
+        Object.keys(val).forEach(k=>{
+          if(val[k]===gsShown[k]) return;
+          gsShown[k]=val[k];
+          if(k==='show_border'){
+            borderChanged=true;
+            if(val[k]==='show') next.show_border=true; else delete next.show_border;
+          }else if(val[k]==null||val[k]===''){
+            delete next[k];
+          }else{
+            next[k]=val[k];
+          }
+        });
+        this._gsPending=next;
+        if(borderChanged) gsFlush();
       });
       gsForm.addEventListener('focusout',()=>{
         setTimeout(()=>{if(this._gsPending&&this.shadowRoot.activeElement!==gsForm) gsFlush();},0);
@@ -947,15 +990,32 @@ class EnergyFlowCard extends HTMLElement {
     if(!c.entity_sun) return false;
     return this._hass?.states[c.entity_sun]?.state==='below_horizon';
   }
-  _num(e,f=0){if(!e||!this._hass)return f;const v=parseFloat(this._hass.states[e]?.state);return isNaN(v)?f:v;}
-  _fmtW(v){return Math.abs(v)>=1000?(v/1000).toFixed(2)+' kW':Math.round(v)+' W';}
+  _watts(eid){
+    const st=eid?this._hass?.states[eid]:null;
+    const v=parseFloat(st?.state);
+    if(isNaN(v)) return 0;
+    return v*(POWER_SCALE[st.attributes?.unit_of_measurement]??1);
+  }
+  _fmtW(v){
+    if(Math.abs(v)>=1000) return numFmt(this._hass,2).format(v/1000)+' kW';
+    return numFmt(this._hass,0).format(Math.round(v)||0)+' W';
+  }
   _fmtVal(eid,hideUnit=false){
-    const st=this._hass?.states[eid];
-    const raw=st?.state??'';
+    const h=this._hass,st=h?.states[eid];
+    if(!st) return '–';
+    if(typeof h.formatEntityStateToParts==='function'){
+      const parts=h.formatEntityStateToParts(st);
+      return(hideUnit?parts.filter(p=>p.type!=='unit'):parts).map(p=>p.value).join('').trim();
+    }
+    if(!hideUnit&&typeof h.formatEntityState==='function') return h.formatEntityState(st);
+    const raw=st.state??'';
     const num=parseFloat(raw);
-    const unit=hideUnit?'':(st?.attributes?.unit_of_measurement||'');
+    const unit=hideUnit?'':(st.attributes?.unit_of_measurement||'');
     const isFloat=!isNaN(num)&&raw.trim()!==''&&raw.includes('.')&&isFinite(Number(raw));
     return(isFloat?num.toFixed(2):raw)+(unit?' '+unit:'');
+  }
+  _deLabel(e){
+    return resolveName(this._hass,e.label,e.entity)||this._hass?.states[e.entity]?.attributes?.friendly_name||e.entity||'';
   }
   _set(id,t){const el=this.shadowRoot.getElementById(id);if(el&&el.textContent!==t)el.textContent=t;}
   _esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -972,7 +1032,7 @@ class EnergyFlowCard extends HTMLElement {
       if(e.position==='hidden'||!e.position) return '';
       const pos=PILL_POS_CSS[e.position]||'left:12px;top:12px;';
       return`<div class="pill" id="pill-ev-${i}" style="${pos}">
-        <span class="pt">${this._esc(e.label||'')}</span>
+        <span class="pt" id="pt-ev-${i}">${this._esc(typeof e.label==='string'?e.label:'')}</span>
         <span class="pv" id="v-ev-${i}">\u2013</span>
       </div>`;
     }).join('');
@@ -982,8 +1042,8 @@ class EnergyFlowCard extends HTMLElement {
       '<ha-card id="card"><div class="wrap" id="wrap">'+
         '<div class="flow">'+
           '<img id="bg" class="bg">'+
-          '<svg class="lines" viewBox="0 0 '+this._esc(this._cfg.viewbox_width||'1676')+' '+this._esc(this._cfg.viewbox_height||'2058')+'" preserveAspectRatio="xMidYMid meet">'+
-            this._defs(ev)+pathGroups+
+          '<svg class="lines" viewBox="0 0 '+this._esc(this._cfg.viewbox_width||GS_DEFAULTS.viewbox_width)+' '+this._esc(this._cfg.viewbox_height||GS_DEFAULTS.viewbox_height)+'" preserveAspectRatio="xMidYMid meet">'+
+            this._defs()+pathGroups+
           '</svg>'+
           '<div class="pills">'+pills+'</div>'+
         '</div>'+
@@ -1002,12 +1062,16 @@ class EnergyFlowCard extends HTMLElement {
     this._ok=true;this._upd();
   }
 
-  _pg(cls,d){const dd=this._esc(d);return'<g class="ln '+cls+'">'+Array.from({length:10},(_,i)=>'<path class="p'+i+'" d="'+dd+'" fill="none"/>').join('')+'</g>';}
+  // Trail paths p1–p9 share one filtered group (one blur pass instead of nine)
+  _pg(cls,d){
+    const dd=this._esc(d),p=i=>'<path class="p'+i+'" d="'+dd+'" fill="none"/>';
+    return'<g class="ln '+cls+'">'+p(0)+'<g class="tr">'+[1,2,3,4,5,6,7,8,9].map(p).join('')+'</g></g>';
+  }
 
   _dailyH(){
     const entities=this._getDailyEntities();
     const rows=entities.map((e,i)=>{
-      const label=this._esc(e.label||e.entity||'');
+      const label=this._esc(typeof e.label==='string'&&e.label?e.label:'');
       const color=this._esc(e.color||'');
       const showSub=!!(e.secondary_entity||e.secondary_template);
       const col2=e.col_span==='2-col';
@@ -1029,7 +1093,7 @@ class EnergyFlowCard extends HTMLElement {
       }
       return'<div class="ep"'+(col2?' style="grid-column:1/-1"':'')+'>'+
         iconEl+
-        '<div class="ed"><span class="el">'+label+'</span>'+inner+'</div></div>';
+        '<div class="ed"><span class="el" id="dl-'+i+'">'+label+'</span>'+inner+'</div></div>';
     }).join('');
     const oneColCount=entities.filter(e=>e.col_span!=='2-col').length;
     const spacer=oneColCount%2===1?'<div class="ep ep-sp" style="visibility:hidden"></div>':'';
@@ -1046,8 +1110,8 @@ class EnergyFlowCard extends HTMLElement {
     const card=sd.getElementById('card');
     const wrap=sd.getElementById('wrap');
     if(wrap) wrap.style.background=n
-      ?(this._cfg.gradient_night||'linear-gradient(to bottom,#0A1929 0%,#1A2332 67%,#2C3440 100%)')
-      :(this._cfg.gradient_day  ||'linear-gradient(to bottom,#2A75F6 0%,#FFFFFF 67%,#D5D5D5 100%)');
+      ?(this._cfg.gradient_night||GS_DEFAULTS.gradient_night)
+      :(this._cfg.gradient_day  ||GS_DEFAULTS.gradient_day);
     if(card){
       card.style.setProperty('--ha-card-border-width',this._cfg.show_border===true?'1px':'0px');
       card.style.setProperty('--ha-card-border-color','var(--divider-color,rgba(255,255,255,0.12))');
@@ -1064,8 +1128,9 @@ class EnergyFlowCard extends HTMLElement {
     ev.forEach((e,i)=>{
       let val;
       if(e.template){const t=parseFloat(this._tplVals['ev'+i]);val=isNaN(t)?0:t;}
-      else val=this._num(e.entity);
+      else val=this._watts(e.entity);
       this._set('v-ev-'+i,this._fmtW(val));
+      this._set('pt-ev-'+i,resolveName(this._hass,e.label,e.entity));
 
       // Switch path when direction changes (pos ↔ neg)
       const dir=val>=0?'pos':'neg';
@@ -1091,7 +1156,7 @@ class EnergyFlowCard extends HTMLElement {
 
       if(isOn){
         const color=val>=0?e.color_positive:(e.color_negative||e.color_positive||'');
-        animCss+=this._dot('lev'+i,color,'ev'+i,this._evDelayAdj[i]||'0s',dir,pause);
+        animCss+=this._dot('lev'+i,color,this._evDelayAdj[i]||'0s',dir,pause);
       }else{
         animCss+='.lines .lev'+i+' path{stroke:transparent;animation:none;}';
       }
@@ -1109,6 +1174,7 @@ class EnergyFlowCard extends HTMLElement {
         daily.querySelectorAll('.ep:not(.ep-sp)').forEach(ep=>{ep.style.background=n?'rgba(255,255,255,0.08)':'rgba(255,255,255,0.85)';});
       }
       this._getDailyEntities().forEach((e,i)=>{
+        this._set('dl-'+i,this._deLabel(e));
         if(e.template) this._set('de-'+i,this._tplVals['de'+i]??'–');
         else if(e.entity) this._set('de-'+i,this._fmtVal(e.entity));
         if(e.secondary_template) this._set('ds-'+i,this._tplVals['ds'+i]??'–');
@@ -1127,7 +1193,7 @@ class EnergyFlowCard extends HTMLElement {
     }
   }
 
-  _dot(cls,color,fid,delay,dir='',pause=1){
+  _dot(cls,color,delay,dir='',pause=1){
     if(!color) return'.lines .'+cls+' path{stroke:transparent;animation:none;}';
     delay=delay||'0s';
     const speed=967,d=20,t=[200,300,400,480,560,640,720,800,880];
@@ -1135,23 +1201,27 @@ class EnergyFlowCard extends HTMLElement {
     const kf='kf'+cls.replace(/\W/g,'')+dir;
     const op=[.85,.7,.6,.5,.4,.3,.22,.15,.08],sw=[8.5,8,7.5,7,6.6,6,5.5,5,4.5];
     let r='@keyframes '+kf+'{to{stroke-dashoffset:'+tot+';}}';
-    r+='.lines .'+cls+' .p0{stroke:'+color+';stroke-width:9;stroke-linecap:round;stroke-dasharray:'+d+' '+(tot-d)+';opacity:1;filter:url(#glow_'+fid+'_b);animation:'+kf+' '+sp+' linear infinite;animation-delay:'+delay+';}';
-    t.forEach((ti,i)=>{r+='.lines .'+cls+' .p'+(i+1)+'{stroke:'+color+';stroke-width:'+sw[i]+';stroke-linecap:round;stroke-dasharray:'+ti+' '+(tot-ti)+';opacity:'+op[i]+';filter:url(#glow_'+fid+');animation:'+kf+' '+sp+' linear infinite;animation-delay:'+delay+';}';});
+    r+='.lines .'+cls+' .p0{stroke:'+color+';stroke-width:9;stroke-linecap:round;stroke-dasharray:'+d+' '+(tot-d)+';opacity:1;filter:url(#efc_glow_b);animation:'+kf+' '+sp+' linear infinite;animation-delay:'+delay+';}';
+    r+='.lines .'+cls+' .tr{filter:url(#efc_glow);}';
+    t.forEach((ti,i)=>{r+='.lines .'+cls+' .p'+(i+1)+'{stroke:'+color+';stroke-width:'+sw[i]+';stroke-linecap:round;stroke-dasharray:'+ti+' '+(tot-ti)+';opacity:'+op[i]+';animation:'+kf+' '+sp+' linear infinite;animation-delay:'+delay+';}';});
     return r;
   }
 
-  _defs(ev){
-    const g=(id,s)=>'<filter id="glow_'+id+'" x="-50%" y="-50%" width="200%" height="200%">'+
-      '<feGaussianBlur in="SourceGraphic" stdDeviation="'+s[0]+'" result="b1"/>'+
-      '<feGaussianBlur in="SourceGraphic" stdDeviation="'+s[1]+'" result="b2"/>'+
-      '<feGaussianBlur in="SourceGraphic" stdDeviation="'+s[2]+'" result="b3"/>'+
-      '<feMerge><feMergeNode in="b3"/><feMergeNode in="b2"/><feMergeNode in="b1"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
-    return'<defs>'+ev.map((_,i)=>g('ev'+i,[12,22,35])+g('ev'+i+'_b',[15,30,50])).join('')+'</defs>';
+  _defs(){
+    // amp: the trail used to be blurred per path, so the nine halos added up (sum of opacities 3.8).
+    // Blurring the composited group instead maps composite alpha back to that sum/3.8 before the
+    // blur (TRAIL_ALPHA_TABLE) and scales the blurred alpha by 3.8 afterwards.
+    const g=(id,s,amp)=>'<filter id="'+id+'" x="-50%" y="-50%" width="200%" height="200%">'+
+      (amp?'<feComponentTransfer in="SourceGraphic" result="pre"><feFuncA type="table" tableValues="'+TRAIL_ALPHA_TABLE+'"/></feComponentTransfer>':'')+
+      s.map((sd,i)=>'<feGaussianBlur in="'+(amp?'pre':'SourceGraphic')+'" stdDeviation="'+sd+'" result="'+(amp?'g':'b')+i+'"/>'+
+        (amp?'<feComponentTransfer in="g'+i+'" result="b'+i+'"><feFuncA type="linear" slope="3.8"/></feComponentTransfer>':'')).join('')+
+      '<feMerge><feMergeNode in="b2"/><feMergeNode in="b1"/><feMergeNode in="b0"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
+    return'<defs>'+g('efc_glow',[12,22,35],true)+g('efc_glow_b',[15,30,50],false)+'</defs>';
   }
 
   _css(){
-    const minW=this._cfg.minmax_min_width||'175px';
-    const fh=this._cfg.flow_height||'265px';
+    const minW=this._cfg.minmax_min_width||GS_DEFAULTS.minmax_min_width;
+    const fh=this._cfg.flow_height||GS_DEFAULTS.flow_height;
     const sh=this._cfg.svg_height||'';
     const mediaStyle=sh
       ?'.bg{position:absolute;left:15px;right:15px;width:calc(100% - 30px);height:'+sh+';top:50%;transform:translateY(-50%);object-fit:contain;}'+
@@ -1184,4 +1254,4 @@ class EnergyFlowCard extends HTMLElement {
 customElements.define('energy-flow-card',EnergyFlowCard);
 window.customCards=window.customCards||[];
 window.customCards.push({type:'energy-flow-card',name:'Energy Flow Card',description:'Animated energy flow with configurable energy value pills'});
-console.info('%c ENERGY-FLOW-CARD %c v1.21.0','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
+console.info('%c ENERGY-FLOW-CARD %c v1.21.1','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
