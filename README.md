@@ -356,7 +356,16 @@ If your source path contains multiple subpaths, split them into individual `<pat
 - **Change: Localized number formatting** — additional values now use Home Assistant's own state formatting: the display precision set for the entity, the locale's decimal separator and translated states such as "Unavailable" (previously e.g. `unavailable kWh`). Pill values follow the number format from your user profile. Visible change: German setups now show `2,33 kWh` / `1,20 kW` instead of `2.33 kWh` / `1.20 kW`.
 - **Editor: No redundant re-renders** — the editor no longer rebuilds itself when Home Assistant echoes back its own change, so the view is not replaced under the cursor after leaving a text field, and sorting or deleting renders once instead of twice.
 - **Editor: General Settings only store what you change** — previously any change in General Settings wrote all nine settings (including the default gradients) into the YAML. Now only the edited field is stored; clearing a field falls back to the default, and "No border" removes `show_border`. Existing configs keep their values — delete unneeded default entries in YAML if you want a clean config.
-- **Performance: Fewer SVG filter passes** — the glow is applied once per flow trail instead of on each of its ten paths (two filtered elements per flow instead of ten, shared filter definitions). The look is unchanged.
+- **Performance: Fewer SVG filter passes** — the glow is applied once per flow trail instead of on each of its ten paths (two filtered elements per flow instead of ten, shared filter definitions). The look is unchanged. Previously the glow filters were the bottleneck: the animation could no longer keep up once two or more flows were active. Measured in Chrome on an Apple M2 (GPU rendering, 2× pixel density, all flows animating):
+
+  | Active flows | v1.21.0 | v1.21.1 |
+  |---|---|---|
+  | 1 | 60 fps | 60 fps, 15–24 % less CPU |
+  | 2 | 47 fps | 60 fps |
+  | 4 | 23 fps | 60 fps |
+  | 12 | 8 fps | 38 fps |
+
+  Rendering cost per frame drops by 45–74 %. Slower devices such as wall tablets or older phones should benefit even more, but were not measured.
 
 ### v1.21.0
 - **New: Jinja2 template value sources** — every energy flow and every additional value (main and optional second value) can read its value from a Jinja2 template instead of an entity, e.g. to combine two sensors: `{{ states('sensor.a') | float(0) + states('sensor.b') | float(0) }}`. Templates are evaluated server-side and update automatically. Energy flow templates must return a number in W; additional value templates are shown as-is (include the unit in the template if desired). The editor offers a "Value Source" selector (Entity / Jinja2 template) per value.
