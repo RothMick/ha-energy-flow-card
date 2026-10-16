@@ -2,6 +2,16 @@
 
 A custom Home Assistant Lovelace card that displays an animated energy flow over a custom SVG background. Energy values are shown as configurable pills with animated flow lines, and daily totals are displayed in a grid below.
 
+### New realistic image set
+
+The same cards and flows as below, rendered with the backgrounds from the [realistic set](#realistic-svg-set-realistic-folder):
+
+<img width="954" height="826" alt="Realistic preview day" src="images/realistic_preview_day.jpg" />
+
+<img width="954" height="826" alt="Realistic preview night" src="images/realistic_preview_night.jpg" />
+
+### Original image set
+
 <img width="992" height="742" alt="Preview3" src="https://github.com/user-attachments/assets/42c1ef46-6764-4ece-beed-d40827449b7b" />
 
 <img width="976" height="742" alt="Preview3b" src="https://github.com/user-attachments/assets/f919f6a3-8608-401a-9eeb-7d1a2838c9bf" />
