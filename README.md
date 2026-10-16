@@ -259,7 +259,7 @@ The files are **drop-in replacements**: width, height, viewBox and all cable lin
 
 | Original | Realistic |
 |---|---|
-| `isometric.svg` / `isometric_night.svg` | `realistic/isometric_realistic.svg` / `realistic/isometric_night_realistic.svg` |
+| `isometric.svg` / `isometric_night.svg` | `realistic/isometric_realistic.svg` / `realistic/isometric_realistic_night.svg` |
 | `gh/<variant>.svg` / `gh/<variant>_night.svg` | `realistic/gh_realistic/<variant>_realistic.svg` / `realistic/gh_realistic/<variant>_realistic_night.svg` |
 
 All 15 `gh/` variants are available in the realistic style. Example:
