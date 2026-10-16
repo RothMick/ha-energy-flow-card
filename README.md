@@ -33,7 +33,7 @@ A custom Home Assistant Lovelace card that displays an animated energy flow over
 2. Go to **Frontend → ⋮ → Custom repositories**
 3. Add this repository URL and select type **Lovelace**
 4. Click **Install**
-5. HACS installs only the card itself (`energy-flow-card.js`). Copy the SVG backgrounds (`isometric.svg`, `isometric_night.svg` — or a variant from the [`gh/`](gh/) folder) into `/config/www/energyflow/` manually, so the `/local/energyflow/…` paths from the examples work
+5. HACS installs only the card itself (`energy-flow-card.js`). Copy the SVG backgrounds (`isometric.svg`, `isometric_night.svg` — or a variant from the [`gh/`](gh/) folder, or the [realistic set](#realistic-svg-set-realistic-folder)) into `/config/www/energyflow/` manually, so the `/local/energyflow/…` paths from the examples work
 6. Reload your browser
 7. Use settings from example below to start
 
@@ -248,6 +248,26 @@ The [`gh/`](gh/) folder contains ready-to-use SVG backgrounds and a matching `EX
 | `gh_bk_nogarage.svg` / `gh_bk_nogarage_battery.svg` | BK variant without garage, optional battery |
 
 The [`gh/EXAMPLE_CONFIG.md`](gh/EXAMPLE_CONFIG.md) contains the corresponding `energy_values` path definitions (SVG strokes, colors, positions) for this house layout.
+
+---
+
+## Realistic SVG set (`realistic/` folder)
+
+The [`realistic/`](realistic/) folder contains a more realistic version of every background: consistent sunlight from the front left, cast and contact shadows, plaster walls, wooden decking and cladding, tiled roofs, blue PV modules with frames, and glazed windows with frames, mullions and sills. At night, the windows glow with warm interior light.
+
+The files are **drop-in replacements**: width, height, viewBox and all cable lines are identical to the originals, so every `path_positive` / `path_negative` from the examples and from [`gh/EXAMPLE_CONFIG.md`](gh/EXAMPLE_CONFIG.md) works unchanged. Only the file names in `svg_day` / `svg_night` change.
+
+| Original | Realistic |
+|---|---|
+| `isometric.svg` / `isometric_night.svg` | `realistic/isometric_realistic.svg` / `realistic/isometric_night_realistic.svg` |
+| `gh/<variant>.svg` / `gh/<variant>_night.svg` | `realistic/gh_realistic/<variant>_realistic.svg` / `realistic/gh_realistic/<variant>_realistic_night.svg` |
+
+All 15 `gh/` variants are available in the realistic style. Example:
+
+```yaml
+svg_day: /local/energyflow/gh_solar_car_battery_realistic.svg
+svg_night: /local/energyflow/gh_solar_car_battery_realistic_night.svg
+```
 
 ---
 
