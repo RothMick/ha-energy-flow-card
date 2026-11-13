@@ -1,4 +1,4 @@
-// energy-flow-card.js  v1.21.2
+// energy-flow-card.js  v1.21.3
 
 // Constants
 const PILL_POSITIONS=[
@@ -85,22 +85,18 @@ class EnergyFlowCardEditor extends HTMLElement {
     this._yamlMode=false;
     this._evEditIdx=null;
     this._evYamlMode=false;
-    this._gsPending=null;
-    this._gfPending=null;
+    // Text typed into buffered fields that has not been fired yet. _pendTop: top-level keys
+    // (undefined = remove the key). _pendItems: "list|index|key" → value, one field of a list
+    // entry. _fire() merges both into every config it sends
+    this._pendTop=null;
+    this._pendItems=null;
     this._evSrcMode=null;
     this._deSrcMode=null;
     this._deSecSrcMode=null;
   }
 
   disconnectedCallback(){
-    if(this._gfPending){
-      this._fire(this._gfPending);
-      this._gfPending=null;
-    }
-    if(this._gsPending){
-      this._fire(this._gsPending);
-      this._gsPending=null;
-    }
+    this._flush();
   }
 
   set hass(h){
@@ -133,9 +129,27 @@ class EnergyFlowCardEditor extends HTMLElement {
     return null;
   }
 
+  // Buffered text is merged into every config that goes out. An action that fires before the
+  // field has lost focus therefore carries the text along instead of being overwritten by it
+  // later: a tap runs its click handler before the focusout timer, and some browsers keep
+  // the field focused
   _fire(cfg){
-    this._cfg={...cfg};
+    const next={...cfg};
+    Object.entries(this._pendTop||{}).forEach(([k,v])=>{if(v===undefined)delete next[k];else next[k]=v;});
+    Object.entries(this._pendItems||{}).forEach(([path,v])=>{
+      const[list,idx,key]=path.split('|');
+      if(!next[list]?.[idx]) return;
+      next[list]=[...next[list]];
+      next[list][idx]={...next[list][idx],[key]:v};
+    });
+    this._pendTop=this._pendItems=null;
+    this._cfg=next;
     this.dispatchEvent(new CustomEvent('config-changed',{detail:{config:this._cfg},bubbles:true,composed:true}));
+  }
+
+  // Writes buffered text now, if there is any
+  _flush(){
+    if(this._pendTop||this._pendItems) this._fire(this._cfg);
   }
 
   _render(){
@@ -238,33 +252,34 @@ class EnergyFlowCardEditor extends HTMLElement {
       form.schema=this._gSchema(this._cfg.entity_sun||'');
       // Only this form's keys: ha-form returns its whole data object, a full config
       // snapshot would write stale values of other forms back
-      form.data=Object.fromEntries(['svg_day','svg_night','mode','entity_sun'].filter(k=>k in this._cfg).map(k=>[k,this._cfg[k]]));
+      const GF_KEYS=['svg_day','svg_night','mode','entity_sun'];
+      form.data=Object.fromEntries(GF_KEYS.filter(k=>k in this._cfg).map(k=>[k,this._cfg[k]]));
       form.computeLabel=s=>s.label??s.name;
 
       // Text fields are buffered – no immediate _fire while typing
       const GF_TEXT=new Set(['svg_day','svg_night']);
 
-      const gfFlush=()=>{
-        if(!this._gfPending) return;
-        const d=this._gfPending; this._gfPending=null;
-        this._fire(d);
-      };
-
       form.addEventListener('value-changed',ev=>{
-        const d={...this._cfg,...ev.detail.value};
+        const val=ev.detail.value;
+        const d={...this._cfg,...val};
         let modeForced=false;
         if(!d.entity_sun && d.mode==='auto'){d.mode='day';modeForced=true;}
 
         // Check whether only text fields changed
-        const changedKeys=Object.keys(ev.detail.value).filter(k=>ev.detail.value[k]!==this._cfg[k]);
+        const changedKeys=Object.keys(val).filter(k=>val[k]!==this._cfg[k]);
         const onlyText=changedKeys.length>0 && changedKeys.every(k=>GF_TEXT.has(k));
 
+        // This form's share of the buffer is rebuilt from its current values
+        const pend={...this._pendTop};
+        GF_KEYS.forEach(k=>delete pend[k]);
         if(onlyText){
           // Text input: buffer only, no _fire → no setConfig → no re-render → no focus loss
-          this._gfPending=d;
+          changedKeys.forEach(k=>{pend[k]=val[k];});
+          if(modeForced) pend.mode='day';
+          this._pendTop=pend;
         } else {
-          // Non-text (entity picker, select): fire immediately
-          this._gfPending=null;
+          // Non-text (entity picker, select): fire immediately, d already holds the text fields
+          this._pendTop=Object.keys(pend).length?pend:null;
           this._fire(d);
           if(modeForced){
             this._renderMain();
@@ -278,7 +293,7 @@ class EnergyFlowCardEditor extends HTMLElement {
       form.addEventListener('focusout',()=>{
         setTimeout(()=>{
           // activeElement !== form: focus is truly outside ha-form
-          if(this._gfPending && this.shadowRoot.activeElement!==form) gfFlush();
+          if(this.shadowRoot.activeElement!==form) this._flush();
         },0);
       });
     }
@@ -306,6 +321,8 @@ class EnergyFlowCardEditor extends HTMLElement {
     });
     sd.querySelectorAll('[data-evaction="edit"]').forEach(b=>{
       b.addEventListener('click',()=>{
+        // Buffered text first, so the next view is built from the complete config
+        this._flush();
         this._evEditIdx=parseInt(b.dataset.idx);
         this._evSrcMode=null;
         this._render();
@@ -349,6 +366,7 @@ class EnergyFlowCardEditor extends HTMLElement {
     });
     sd.querySelectorAll('[data-action="edit"]').forEach(b=>{
       b.addEventListener('click',()=>{
+        this._flush();
         this._editIdx=parseInt(b.dataset.idx);
         this._deSrcMode=null;
         this._deSecSrcMode=null;
@@ -385,35 +403,30 @@ class EnergyFlowCardEditor extends HTMLElement {
       gsForm.data={...gsShown};
       gsForm.computeLabel=s=>s.label??s.name;
 
-      const gsFlush=()=>{
-        if(!this._gsPending) return;
-        const d=this._gsPending; this._gsPending=null;
-        this._fire(d);
-      };
       gsForm.addEventListener('value-changed',ev=>{
         const val=ev.detail.value;
-        const next={...(this._gsPending||this._cfg)};
-        let borderChanged=false;
+        const pend={...this._pendTop};
+        let changed=false,borderChanged=false;
         Object.keys(val).forEach(k=>{
           if(val[k]===gsShown[k]) return;
           gsShown[k]=val[k];
+          changed=true;
           if(k==='show_border'){
             borderChanged=true;
-            if(val[k]==='show') next.show_border=true; else delete next.show_border;
-          }else if(val[k]==null||val[k]===''){
-            delete next[k];
+            pend.show_border=val[k]==='show'?true:undefined;
           }else{
-            next[k]=val[k];
+            // An emptied field removes the key, so the default applies again
+            pend[k]=(val[k]==null||val[k]==='')?undefined:val[k];
           }
         });
-        this._gsPending=next;
-        if(borderChanged) gsFlush();
+        if(changed) this._pendTop=pend;
+        if(borderChanged) this._flush();
       });
       gsForm.addEventListener('focusout',()=>{
-        setTimeout(()=>{if(this._gsPending&&this.shadowRoot.activeElement!==gsForm) gsFlush();},0);
+        setTimeout(()=>{if(this.shadowRoot.activeElement!==gsForm) this._flush();},0);
       });
       const genDetails=sd.getElementById('gen-settings-details');
-      genDetails.addEventListener('toggle',()=>{if(!genDetails.open) gsFlush();});
+      genDetails.addEventListener('toggle',()=>{if(!genDetails.open) this._flush();});
     }
 
     // Restore open state of General Settings details
@@ -468,12 +481,15 @@ class EnergyFlowCardEditor extends HTMLElement {
       }`;
 
     sd.getElementById('back').addEventListener('click',()=>{
+      // Buffered text (a color name) first: it belongs to this entry
+      this._flush();
       this._evYamlMode=false;
       this._evEditIdx=null;
       this._evSrcMode=null;
       this._render();
     });
     sd.getElementById('yaml-toggle').addEventListener('click',()=>{
+      this._flush();
       this._evYamlMode=!this._evYamlMode;
       this._renderEvEdit();
     });
@@ -492,6 +508,7 @@ class EnergyFlowCardEditor extends HTMLElement {
     }else{
       // Helper: merge changed fields into current entry and fire
       const fireUpdate=(changed)=>{
+        if(this._evEditIdx===null) return; // the view was left meanwhile
         const arr=[...(this._cfg.energy_values||[])];
         const {hide_value:_hv,...existing}=arr[this._evEditIdx]||{};
         arr[this._evEditIdx]={...existing,...changed};
@@ -573,7 +590,7 @@ class EnergyFlowCardEditor extends HTMLElement {
 
       // Wire color picker + textfield for positive/negative
       [['pos','color_positive'],['neg','color_negative']].forEach(([sfx,key])=>{
-        this._wireColorField(sd,sfx,e[key]||'',val=>fireUpdate({[key]:val}));
+        this._wireColorField(sd,sfx,e[key]||'','energy_values|'+this._evEditIdx+'|'+key,val=>fireUpdate({[key]:val}));
       });
     }
   }
@@ -615,6 +632,7 @@ class EnergyFlowCardEditor extends HTMLElement {
           <ha-form id="ef2"></ha-form>`}`;
 
     sd.getElementById('back').addEventListener('click',()=>{
+      this._flush();
       this._yamlMode=false;
       this._editIdx=null;
       this._deSrcMode=null;
@@ -622,6 +640,7 @@ class EnergyFlowCardEditor extends HTMLElement {
       this._render();
     });
     sd.getElementById('yaml-toggle').addEventListener('click',()=>{
+      this._flush();
       this._yamlMode=!this._yamlMode;
       this._renderEdit();
     });
@@ -640,6 +659,7 @@ class EnergyFlowCardEditor extends HTMLElement {
     }else{
       // Helper: merge changed fields into current entry and fire
       const fireUpdate=(changed)=>{
+        if(this._editIdx===null) return; // the view was left meanwhile
         const arr=[...(this._cfg.daily_entities||[])];
         arr[this._editIdx]={...(arr[this._editIdx]||{}),...changed};
         this._fire({...this._cfg,daily_entities:arr});
@@ -740,7 +760,7 @@ class EnergyFlowCardEditor extends HTMLElement {
       }
 
       // Wire color picker + textfield
-      this._wireColorField(sd,'color',e.color||'',val=>fireUpdate({color:val}));
+      this._wireColorField(sd,'color',e.color||'','daily_entities|'+this._editIdx+'|color',val=>fireUpdate({color:val}));
     }
   }
 
@@ -799,7 +819,7 @@ class EnergyFlowCardEditor extends HTMLElement {
       {name:'gradient_night',  label:'Background Gradient Night (e.g. linear-gradient(to bottom,#0A1929 0%,...))',selector:{text:{}}},
       {name:'viewbox_width',   label:'SVG ViewBox Width (e.g. 1676)',                                             selector:{text:{}}},
       {name:'viewbox_height',  label:'SVG ViewBox Height (e.g. 2058)',                                            selector:{text:{}}},
-      {name:'animation_pause', label:'Animation Duration (e.g. 3.5s)',                                           selector:{text:{}}},
+      {name:'animation_pause', label:'Pause between comets (e.g. 3.5s)',                                         selector:{text:{}}},
       {name:'show_border',     label:'Card Border',                                                                selector:{select:{options:[{value:'hide',label:'No border'},{value:'show',label:'Show border'}]}}},
     ];
   }
@@ -847,16 +867,19 @@ class EnergyFlowCardEditor extends HTMLElement {
 
   // Wires a color square (input[type=color]) + text field pair by id suffix. The text field is a
   // one-field ha-form: Home Assistant's frontend no longer provides ha-textfield. A complete hex
-  // value is applied right away; any other text (named color, rgb(), var()) when the field loses focus
-  _wireColorField(sd,sfx,init,onChange){
+  // value is applied right away; any other text (named color, rgb(), var()) is buffered under
+  // `path` ("list|index|key") and written when the field loses focus or the next change fires
+  _wireColorField(sd,sfx,init,path,onChange){
     const picker=sd.getElementById('picker-'+sfx);
     const swatch=sd.getElementById('swatch-'+sfx);
     const form=sd.getElementById('tfield-'+sfx);
     this._syncSwatch(swatch,picker,init);
-    let pending=null;
-    const flush=()=>{
-      if(pending===null) return;
-      const val=pending; pending=null;
+    // A value that is applied directly replaces what this field still has in the buffer
+    const apply=val=>{
+      if(this._pendItems){
+        delete this._pendItems[path];
+        if(!Object.keys(this._pendItems).length) this._pendItems=null;
+      }
       onChange(val);
     };
     if(form){
@@ -868,19 +891,18 @@ class EnergyFlowCardEditor extends HTMLElement {
         form.data=ev.detail.value||{};
         const val=(ev.detail.value?.color||'').trim();
         this._syncSwatch(swatch,picker,val);
-        if(/^#[0-9a-f]{6}$/i.test(val)){pending=null;onChange(val);}
-        else pending=val;
+        if(/^#[0-9a-f]{6}$/i.test(val)) apply(val);
+        else this._pendItems={...this._pendItems,[path]:val};
       });
       form.addEventListener('focusout',()=>{
-        setTimeout(()=>{if(pending!==null&&this.shadowRoot.activeElement!==form) flush();},0);
+        setTimeout(()=>{if(this.shadowRoot.activeElement!==form) this._flush();},0);
       });
     }
     picker?.addEventListener('input',ev=>{
       const hex=ev.target.value;
       this._syncSwatch(swatch,null,hex);
-      pending=null;
       if(form) form.data={color:hex};
-      onChange(hex);
+      apply(hex);
     });
   }
 
@@ -938,7 +960,12 @@ class EnergyFlowCard extends HTMLElement {
     this._tpl={};this._tplVals={};
     this._animEpoch=null;this._evDelayAdj={};this._evAnimOn={};
   }
-  setConfig(c){this._cfg=c;this._watchIds=this._calcWatchIds();this._ok=false;this._prevStates=null;this._lastNight=undefined;this._prevStateObjs={};this._evDirs={};this._animEpoch=null;this._evDelayAdj={};this._evAnimOn={};this._build();this._syncTplSubs();}
+  setConfig(c){
+    this._cfg=c;this._watchIds=this._calcWatchIds();this._ok=false;this._prevStates=null;this._lastNight=undefined;this._prevStateObjs={};this._evDirs={};this._animEpoch=null;this._evDelayAdj={};this._evAnimOn={};
+    // Subscriptions first: a slot whose template changed (entries reordered or removed) drops
+    // its old value before _build renders, so the value cannot show up under another entry
+    this._syncTplSubs();this._build();
+  }
   set hass(h){const first=!this._hass&&h;this._hass=h;if(first)this._syncTplSubs();if(this._ok&&this._hasRelevantChange())this._upd();}
   connectedCallback(){
     // disconnectedCallback baut Subscriptions ab → nach DOM-Move/Tab-Wechsel neu aufbauen.
@@ -975,12 +1002,18 @@ class EnergyFlowCard extends HTMLElement {
     this._tpl[key]={active:template,token};
     try{
       const unsub=await this._hass.connection.subscribeMessage(msg=>{
+        // A superseded subscription can still deliver before it is cancelled: ignore it
+        if(this._tpl[key]?.token!==token) return;
         if(msg.result!==undefined){
           this._tplVals[key]=String(msg.result).trim();
-          if(this._ok)this._upd();
         }else if(msg.error){
           console.error('energy-flow-card template ('+key+'):',msg.error);
-        }
+          // A warning comes along with a result. An error means the template has no value
+          // any more: drop the last one instead of showing it as if it were current
+          if(msg.level&&msg.level!=='ERROR') return;
+          delete this._tplVals[key];
+        }else return;
+        if(this._ok)this._upd();
       },{type:'render_template',template,variables:{},report_errors:true});
       if(this._tpl[key]?.token===token) this._tpl[key].unsub=unsub;
       else unsub();
@@ -996,12 +1029,15 @@ class EnergyFlowCard extends HTMLElement {
     (c.daily_entities||[]).forEach(e=>{if(e.entity)eids.add(e.entity);if(e.secondary_entity)eids.add(e.secondary_entity);});
     return[...eids];
   }
+  // Compares the state objects, not only .state: Home Assistant replaces the object whenever the
+  // state or an attribute (unit, friendly name, icon) changes. The locale drives the number
+  // format, the registries drive composed names and the display precision
   _hasRelevantChange(){
     const h=this._hass,eids=this._watchIds;
     const prev=this._prevStates;
-    let changed=!prev;
-    if(prev){for(let j=0;j<eids.length;j++){if(h.states[eids[j]]?.state!==prev[eids[j]]){changed=true;break;}}}
-    if(changed){const ns={};eids.forEach(eid=>{ns[eid]=h.states[eid]?.state;});this._prevStates=ns;}
+    let changed=!prev||prev.locale!==h.locale||prev.entities!==h.entities||prev.devices!==h.devices||prev.areas!==h.areas;
+    if(!changed){for(let j=0;j<eids.length;j++){if(h.states[eids[j]]!==prev.objs[j]){changed=true;break;}}}
+    if(changed)this._prevStates={objs:eids.map(eid=>h.states[eid]),locale:h.locale,entities:h.entities,devices:h.devices,areas:h.areas};
     return changed;
   }
   getCardSize(){return this._hasD()?8:5;}
@@ -1079,6 +1115,12 @@ class EnergyFlowCard extends HTMLElement {
       '</div></ha-card>'+
       '<style id="as"></style>';
 
+    // Sizes from the config go in as custom properties, see _css()
+    const wrap=sd.getElementById('wrap');
+    wrap.style.setProperty('--efc-flow-h',this._cfg.flow_height||GS_DEFAULTS.flow_height);
+    wrap.style.setProperty('--efc-min-w',this._cfg.minmax_min_width||GS_DEFAULTS.minmax_min_width);
+    if(this._cfg.svg_height) wrap.style.setProperty('--efc-svg-h',this._cfg.svg_height);
+
     // Click handlers: open more-info
     ev.forEach((e,i)=>{
       const el=sd.getElementById('pill-ev-'+i);
@@ -1123,9 +1165,7 @@ class EnergyFlowCard extends HTMLElement {
         iconEl+
         '<div class="ed"><span class="el" id="dl-'+i+'">'+label+'</span>'+inner+'</div></div>';
     }).join('');
-    const oneColCount=entities.filter(e=>e.col_span!=='2-col').length;
-    const spacer=oneColCount%2===1?'<div class="ep ep-sp" style="visibility:hidden"></div>':'';
-    return'<div class="daily" id="daily">'+rows+spacer+'</div>';
+    return'<div class="daily" id="daily">'+rows+'</div>';
   }
 
   _upd(){
@@ -1200,7 +1240,7 @@ class EnergyFlowCard extends HTMLElement {
       if(daily&&n!==this._lastNight){
         this._lastNight=n;
         daily.style.color=n?'white':'#1a1a1a';
-        daily.querySelectorAll('.ep:not(.ep-sp)').forEach(ep=>{ep.style.background=n?'rgba(255,255,255,0.08)':'rgba(255,255,255,0.85)';});
+        daily.querySelectorAll('.ep').forEach(ep=>{ep.style.background=n?'rgba(255,255,255,0.08)':'rgba(255,255,255,0.85)';});
       }
       this._getDailyEntities().forEach((e,i)=>{
         this._set('dl-'+i,this._deLabel(e));
@@ -1223,7 +1263,8 @@ class EnergyFlowCard extends HTMLElement {
   }
 
   _dot(cls,color,delay,dir='',pause=1){
-    if(!color) return'.lines .'+cls+' path{stroke:transparent;animation:none;}';
+    // The color becomes stylesheet text: one that could end the declaration is not a color
+    if(!color||/[;{}<>]/.test(color)) return'.lines .'+cls+' path{stroke:transparent;animation:none;}';
     delay=delay||'0s';
     const speed=967,d=20,t=[200,300,400,480,560,640,720,800,880];
     const gap=pause*speed,tot=d+t[8]+gap,sp=(tot/speed).toFixed(2)+'s';
@@ -1248,20 +1289,20 @@ class EnergyFlowCard extends HTMLElement {
     return'<defs>'+g('efc_glow',[12,22,35],true)+g('efc_glow_b',[15,30,50],false)+'</defs>';
   }
 
+  // flow_height, minmax_min_width and svg_height are not written into this text. _build() sets
+  // them as custom properties through the CSSOM, where a value can only ever be a CSS value:
+  // it cannot close the <style> element or add rules and elements of its own
   _css(){
-    const minW=this._cfg.minmax_min_width||GS_DEFAULTS.minmax_min_width;
-    const fh=this._cfg.flow_height||GS_DEFAULTS.flow_height;
-    const sh=this._cfg.svg_height||'';
-    const mediaStyle=sh
-      ?'.bg{position:absolute;left:15px;right:15px;width:calc(100% - 30px);height:'+sh+';top:50%;transform:translateY(-50%);object-fit:contain;}'+
-        '.lines{position:absolute;left:15px;right:15px;width:calc(100% - 30px);height:'+sh+';top:50%;transform:translateY(-50%);}'
+    const mediaStyle=this._cfg.svg_height
+      ?'.bg{position:absolute;left:15px;right:15px;width:calc(100% - 30px);height:var(--efc-svg-h);top:50%;transform:translateY(-50%);object-fit:contain;}'+
+        '.lines{position:absolute;left:15px;right:15px;width:calc(100% - 30px);height:var(--efc-svg-h);top:50%;transform:translateY(-50%);}'
       :'.bg{position:absolute;inset:10px 15px 5px 15px;width:calc(100% - 30px);height:calc(100% - 15px);object-fit:contain;}'+
         '.lines{position:absolute;inset:10px 15px 5px 15px;width:calc(100% - 30px);height:calc(100% - 15px);}';
     return(
     ':host{display:block;}'+
     'ha-card{overflow:hidden;border-radius:16px;padding:0;box-shadow:none;}'+
     '.wrap{width:100%;min-height:100%;}'+
-    '.flow{position:relative;width:100%;height:'+fh+';overflow:hidden;}'+
+    '.flow{position:relative;width:100%;height:var(--efc-flow-h,'+GS_DEFAULTS.flow_height+');overflow:hidden;}'+
     mediaStyle+
     '.pills{position:absolute;inset:0;pointer-events:none;z-index:2;}'+
     '.pill{position:absolute;background:rgba(0,0,0,.35);border-radius:12px;padding:12px 14px;color:white;font-family:system-ui;pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent;}'+
@@ -1270,7 +1311,7 @@ class EnergyFlowCard extends HTMLElement {
     '.pt{display:block;font-size:12px;opacity:.8;line-height:1.3;}'+
     '.pv{display:block;font-size:18px;font-weight:700;line-height:1.2;margin-top:2px;}'+
     '.lines .ln path{stroke-width:14;stroke-linecap:round;}'+
-    '.daily{display:grid;grid-template-columns:repeat(auto-fill,minmax(max('+minW+',calc(50% - 4px)),1fr));gap:8px;padding:8px;transition:color .5s;}'+
+    '.daily{display:grid;grid-template-columns:repeat(auto-fill,minmax(max(var(--efc-min-w,'+GS_DEFAULTS.minmax_min_width+'),calc(50% - 4px)),1fr));gap:8px;padding:8px;transition:color .5s;}'+
     '.ep{border-radius:12px;padding:10px 14px;font-family:system-ui;display:flex;align-items:center;gap:10px;box-shadow:0 1px 4px rgba(0,0,0,.1);transition:background .3s;}'+
     '.ed{display:flex;flex-direction:column;align-items:flex-start;flex:1;min-width:0;overflow:hidden;}'+
     '.el{font-size:11px;opacity:.75;line-height:1.3;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'+
@@ -1283,4 +1324,4 @@ class EnergyFlowCard extends HTMLElement {
 customElements.define('energy-flow-card',EnergyFlowCard);
 window.customCards=window.customCards||[];
 window.customCards.push({type:'energy-flow-card',name:'Energy Flow Card',description:'Animated energy flow with configurable energy value pills'});
-console.info('%c ENERGY-FLOW-CARD %c v1.21.2','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
+console.info('%c ENERGY-FLOW-CARD %c v1.21.3','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');

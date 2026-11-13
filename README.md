@@ -51,7 +51,7 @@ The same cards and flows as below, rendered with the backgrounds from the [reali
 
 1. Copy `energy-flow-card.js`, `isometric.svg` and `isometric_night.svg` into `/config/www/energyflow/` on your Home Assistant instance
 2. Go to **Settings → Dashboards → ⋮ → Resources → Add**
-3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.21.2` and type to **JavaScript module**
+3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.21.3` and type to **JavaScript module**
 4. Reload your browser
 5. Use settings from example below to start
 
@@ -179,7 +179,7 @@ daily_entities:
     secondary_icon: mdi:arrow-top-right
 ```
 
-Templates are evaluated server-side and update automatically. Energy flow templates must return a **number in W** (drives pill, flow direction and animation); if the result is not a number, the pill shows `–` and the flow stays off. Additional value templates are shown **as-is** — include the unit in the template if desired.
+Templates are evaluated server-side and update automatically. Energy flow templates must return a **number in W** (drives pill, flow direction and animation); if the result is not a number or the template raises an error, the pill shows `–` and the flow stays off. Additional value templates are shown **as-is** — include the unit in the template if desired.
 
 ---
 
@@ -191,7 +191,7 @@ Templates are evaluated server-side and update automatically. Energy flow templa
 |---|---|---|---|
 | `svg_day` | string | | Path to the SVG background for daytime |
 | `svg_night` | string | | Path to the SVG background for nighttime |
-| `mode` | `auto` / `day` / `night` | `day` | Display mode. `auto` switches based on `entity_sun` |
+| `mode` | `auto` / `day` / `night` | `auto` | Display mode. `auto` switches based on `entity_sun` and behaves like `day` when no `entity_sun` is set |
 | `entity_sun` | entity | | Any entity whose state is `below_horizon` for night detection |
 | `energy_values` | list | `[]` | Up to 12 energy flows (max. 8 visible pills) including energy flow animations (see below) |
 | `daily_entities` | list | `[]` | Daily total values shown below the SVG (see below) |
@@ -211,6 +211,10 @@ Templates are evaluated server-side and update automatically. Energy flow templa
 | `color_negative` | string | Hex color for negative flow (leave empty to reuse positive color) |
 | `path_negative` | string | SVG path `d` attribute for negative flow direction |
 | `delay_negative` | string | Animation delay for the negative flow, in seconds or milliseconds (leave empty to reuse the positive delay) |
+
+A flow is animated while its value is above 15 W in either direction (more than `15` or less than `-15`). Smaller values are still shown in the pill, but the flow stays off.
+
+Time values (`delay_positive`, `delay_negative`, `animation_pause`) need a dot as decimal separator: `3.5s`, not `3,5s` (which is read as `3s`).
 
 ### `daily_entities` entry
 
@@ -238,7 +242,7 @@ Templates are evaluated server-side and update automatically. Energy flow templa
 | `gradient_night` | string | `linear-gradient(to bottom,#0A1929 0%,#1A2332 67%,#2C3440 100%)` | CSS background gradient for night mode |
 | `viewbox_width` | string | `1676` | SVG viewBox width — change when using a custom SVG with different dimensions. |
 | `viewbox_height` | string | `2058` | SVG viewBox height — change when using a custom SVG with different dimensions |
-| `animation_pause` | string | `3.5s` | Total animation cycle length (comet + pause). Higher values = longer pause between loops (e.g. `1s`, `3.5s`, `5s`; milliseconds such as `3500ms` work too) |
+| `animation_pause` | string | `3.5s` | Pause between two comets on a flow line. The comet itself takes about 0.93 s to pass, so one cycle lasts `animation_pause` + 0.93 s (`3.5s` → 4.43 s). With `0` the comets follow each other without a gap (e.g. `1s`, `3.5s`, `5s`; milliseconds such as `3500ms` work too) |
 | `show_border` | boolean | `false` | Show a 1 px card border. Set via the "Card Border" dropdown in General Settings (`true` = show, `false` = hide). Uses `--ha-card-border-color` / `--divider-color` from the active theme. |
 
 ---
@@ -286,7 +290,7 @@ svg_night: /local/energyflow/gh_solar_car_battery_realistic_night.svg
 The flow animation follows SVG `path` elements. To get the correct paths for your own SVG:
 
 1. Draw your isometric SVG (e.g. Affinity Designer, Figma)
-2. Trace the desired flow line as a path
+2. Trace the desired flow line as a path, drawn from the destination of the energy to its source: the comet travels from the last point of the path to its first
 3. Copy the `d` attribute value
 4. Paste it into `path_positive` / `path_negative` in the card config (a negative path is the positive version but from last to first point)
 
@@ -358,10 +362,10 @@ When defining animation route paths, set explicit values for the following attri
 
 ## Path Direction and Animation Start Point
 
-The direction a comet travels along a path is determined by the **draw direction** of the path — i.e. where the path starts (`M`) and which way the coordinates proceed.
+The direction a comet travels along a path is determined by the **draw direction** of the path — i.e. where the path starts (`M`) and which way the coordinates proceed. The comet runs **against** the draw direction: it appears at the last point of the path and travels towards the starting point (`M x y`), where its tail fades out.
 
+- Draw each path from the **destination** of the energy to its **source**. In the full example above, `path_positive` of the grid flow ends at the bottom edge of the image (`…L318.041 2051.41`): that is where the comet for grid import appears.
 - If a comet animates in the **wrong direction**, reverse the path rather than inverting the animation logic.
-- The starting point (`M x y`) defines where the comet appears at progress `0`.
 - For **bidirectional flows** (e.g. grid import vs. export), maintain two separate reversed copies of the same path. Lazy way: Usa an AI tools, and let it rewrite reversed version of the path and to re-calculate the bezier curves.
 
 ---
@@ -378,6 +382,14 @@ If your source path contains multiple subpaths, split them into individual `<pat
 ---
 
 ## Changelog
+
+### v1.21.3
+- **Fix: On touch screens the editor could undo your last action** — text typed into a buffered field (background paths, General Settings, a color name) is written when the field loses focus. A tap on a button is handled before that happens, and the late write then restored the configuration from before the tap: a deleted entry came back while the list showed it as deleted, a newly added entry was dropped, and a typed color name was lost when tapping the back arrow. Buffered text is now merged into every change the editor sends, so the order no longer matters. Mouse use was not affected.
+- **Fix: A failing template kept its last value** — when a template that had already delivered a value later raised an error (e.g. `| float` without a default while the sensor is unavailable), the pill kept showing the old number and the flow kept running. It now shows `–` and the flow stops, as documented. After reordering or deleting entries, a template value can no longer appear briefly under the wrong entry.
+- **Fix: Card did not update when only an attribute changed** — the card re-rendered only when a state value changed. A changed unit (`W` → `kW`), friendly name or icon and a changed number format in your profile now show up immediately, as do changes in the entity, device and area registries (composed names, display precision).
+- **Fix: Blank space below the additional values** — an invisible filler tile added an empty row (28 px) in the one-column layout with an odd number of half-width tiles, and whenever a full-width tile followed a single half-width one. The filler is removed; the tile layout itself is unchanged.
+- **Security: Size settings could inject HTML** — `flow_height`, `minmax_min_width` and `svg_height` were written into the card's stylesheet as text. A crafted value, for example in a configuration copied from the internet, could add elements to the card and run script. The values are now applied as CSS custom properties and can only act as CSS values. Flow colors containing `;`, `{`, `}`, `<` or `>` are ignored.
+- **Docs and editor label** — `animation_pause` is the pause between two comets, not the whole cycle (cycle = pause + 0.93 s); the editor field is now labelled "Pause between comets". The comet travels from the last point of a path to its first point; the path hints described it the other way round. The 15 W animation threshold, the dot as decimal separator in time values and the actual default of `mode` are now documented.
 
 ### v1.21.2
 - **Fix: Color text fields in the editor** — the hex fields next to the color squares were built from `ha-textfield`, which Home Assistant's frontend no longer provides (it was replaced by `ha-input`). They are now `ha-form` fields like the rest of the editor. A complete hex value (`#64B7F6`) is applied immediately; any other text (a color name, `rgb(…)`, `var(…)`) is applied when you leave the field.
