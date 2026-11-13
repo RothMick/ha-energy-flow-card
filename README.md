@@ -51,7 +51,7 @@ The same cards and flows as below, rendered with the backgrounds from the [reali
 
 1. Copy `energy-flow-card.js`, `isometric.svg` and `isometric_night.svg` into `/config/www/energyflow/` on your Home Assistant instance
 2. Go to **Settings → Dashboards → ⋮ → Resources → Add**
-3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.21.1` and type to **JavaScript module**
+3. Set URL to `/local/energyflow/energy-flow-card.js?v=1.21.2` and type to **JavaScript module**
 4. Reload your browser
 5. Use settings from example below to start
 
@@ -179,7 +179,7 @@ daily_entities:
     secondary_icon: mdi:arrow-top-right
 ```
 
-Templates are evaluated server-side and update automatically. Energy flow templates must return a **number in W** (drives pill, flow direction and animation). Additional value templates are shown **as-is** — include the unit in the template if desired.
+Templates are evaluated server-side and update automatically. Energy flow templates must return a **number in W** (drives pill, flow direction and animation); if the result is not a number, the pill shows `–` and the flow stays off. Additional value templates are shown **as-is** — include the unit in the template if desired.
 
 ---
 
@@ -201,16 +201,16 @@ Templates are evaluated server-side and update automatically. Energy flow templa
 
 | Option | Type | Description |
 |---|---|---|
-| `entity` | entity | Power sensor to read the value from (alternative to `template`). Values in `kW`, `MW` or `mW` are converted to W automatically based on the entity's unit |
+| `entity` | entity | Power sensor to read the value from (alternative to `template`). Values in `kW`, `MW` or `mW` are converted to W automatically based on the entity's unit. Unavailable, unknown or non-numeric states show `–` in the pill and keep the flow off |
 | `template` | string | Jinja2 template returning a number in W (alternative to `entity`, e.g. `{{ states('sensor.a') \| float(0) + states('sensor.b') \| float(0) }}`). Evaluated server-side and updates automatically. |
 | `position` | string | Pill position: `hidden`, `top-left`, `top-center`, `top-right`, `middle-left`, `middle-right`, `bottom-left`, `bottom-center`, `bottom-right`. Each visible position can only be used once. Use `hidden` (default) to run the flow animation without showing a pill. |
 | `label` | string / name | Label shown above the value in the pill. Custom text, or a composed name (entity / device / area) from the editor's name picker |
 | `color_positive` | string | Hex color for positive flow animation (e.g. `#64B7F6`) |
 | `path_positive` | string | SVG path `d` attribute for positive flow direction |
-| `delay_positive` | string | CSS animation delay for positive flow (e.g. `0s`, `-0.8s`) |
+| `delay_positive` | string | Animation delay for the positive flow, in seconds or milliseconds (e.g. `0s`, `-0.8s`, `-800ms`) |
 | `color_negative` | string | Hex color for negative flow (leave empty to reuse positive color) |
 | `path_negative` | string | SVG path `d` attribute for negative flow direction |
-| `delay_negative` | string | CSS animation delay for negative flow (leave empty to reuse the positive delay) |
+| `delay_negative` | string | Animation delay for the negative flow, in seconds or milliseconds (leave empty to reuse the positive delay) |
 
 ### `daily_entities` entry
 
@@ -238,7 +238,7 @@ Templates are evaluated server-side and update automatically. Energy flow templa
 | `gradient_night` | string | `linear-gradient(to bottom,#0A1929 0%,#1A2332 67%,#2C3440 100%)` | CSS background gradient for night mode |
 | `viewbox_width` | string | `1676` | SVG viewBox width — change when using a custom SVG with different dimensions. |
 | `viewbox_height` | string | `2058` | SVG viewBox height — change when using a custom SVG with different dimensions |
-| `animation_pause` | string | `3.5s` | Total animation cycle length (comet + pause). Higher values = longer pause between loops (e.g. `1s`, `3.5s`, `5s`) |
+| `animation_pause` | string | `3.5s` | Total animation cycle length (comet + pause). Higher values = longer pause between loops (e.g. `1s`, `3.5s`, `5s`; milliseconds such as `3500ms` work too) |
 | `show_border` | boolean | `false` | Show a 1 px card border. Set via the "Card Border" dropdown in General Settings (`true` = show, `false` = hide). Uses `--ha-card-border-color` / `--divider-color` from the active theme. |
 
 ---
@@ -378,6 +378,11 @@ If your source path contains multiple subpaths, split them into individual `<pat
 ---
 
 ## Changelog
+
+### v1.21.2
+- **Fix: Color text fields in the editor** — the hex fields next to the color squares were built from `ha-textfield`, which Home Assistant's frontend no longer provides (it was replaced by `ha-input`). They are now `ha-form` fields like the rest of the editor. A complete hex value (`#64B7F6`) is applied immediately; any other text (a color name, `rgb(…)`, `var(…)`) is applied when you leave the field.
+- **Fix: Units in `delay_positive`, `delay_negative` and `animation_pause`** — values with a millisecond unit were read as seconds: `-800ms` became `-800s`, and `animation_pause: 3500ms` produced a cycle of 3500 seconds. `s`, `ms` and plain numbers (seconds) are now understood.
+- **Fix: Unavailable sensors showed `0 W`** — an energy flow whose entity is `unavailable`, `unknown`, missing or non-numeric, or whose template returns no number (or has not answered yet), now shows `–` instead of `0 W`, so it cannot be mistaken for a real zero. The flow animation stays off, as before.
 
 ### v1.21.1
 - **Fix: Composed names showed `[object Object]`** — names chosen in "Composed" mode of the name picker (e.g. device + entity) are stored as objects, not text. Pills, additional values and the editor list now resolve them the same way Home Assistant's own cards do.

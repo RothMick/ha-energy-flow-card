@@ -1,4 +1,4 @@
-// energy-flow-card.js  v1.21.1
+// energy-flow-card.js  v1.21.2
 
 // Constants
 const PILL_POSITIONS=[
@@ -65,6 +65,14 @@ const numFmt=(hass,digits)=>{
     ??(nf==='system'?undefined:loc.language);
   const key=String(lang)+'|'+nf+'|'+digits;
   return _numFormatters[key]||(_numFormatters[key]=new Intl.NumberFormat(lang,{minimumFractionDigits:digits,maximumFractionDigits:digits,useGrouping:nf!=='none'}));
+};
+
+// CSS time ("-0.8s", "-800ms") or a plain number (seconds) → seconds; `fallback` when empty or invalid.
+// parseFloat alone would read "-800ms" as -800 s.
+const toSeconds=(v,fallback)=>{
+  const s=String(v??'').trim(),n=parseFloat(s);
+  if(!isFinite(n)) return fallback;
+  return /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?\s*ms\b/i.test(s)?n/1000:n;
 };
 
 class EnergyFlowCardEditor extends HTMLElement {
@@ -446,7 +454,7 @@ class EnergyFlowCardEditor extends HTMLElement {
           </div>
           <div class="color-field">
             <div class="cp-swatch no-color" id="swatch-pos"><input type="color" id="picker-pos" class="cp-hidden-input"></div>
-            <ha-textfield id="tfield-pos" label="Color (e.g. #64B7F6)" style="flex:1;"></ha-textfield>
+            <ha-form id="tfield-pos" style="flex:1;min-width:0;"></ha-form>
           </div>
           <ha-form id="ef-pos"></ha-form>
           <div class="flow-heading-row">
@@ -454,7 +462,7 @@ class EnergyFlowCardEditor extends HTMLElement {
           </div>
           <div class="color-field">
             <div class="cp-swatch no-color" id="swatch-neg"><input type="color" id="picker-neg" class="cp-hidden-input"></div>
-            <ha-textfield id="tfield-neg" label="Color (e.g. #64B7F6)" style="flex:1;"></ha-textfield>
+            <ha-form id="tfield-neg" style="flex:1;min-width:0;"></ha-form>
           </div>
           <ha-form id="ef-neg"></ha-form>`
       }`;
@@ -596,7 +604,7 @@ class EnergyFlowCardEditor extends HTMLElement {
           <ha-form id="ef"></ha-form>
           <div class="color-field">
             <div class="cp-swatch no-color" id="swatch-color"><input type="color" id="picker-color" class="cp-hidden-input"></div>
-            <ha-textfield id="tfield-color" label="Color (e.g. #64B7F6)" style="flex:1;"></ha-textfield>
+            <ha-form id="tfield-color" style="flex:1;min-width:0;"></ha-form>
           </div>
           <div class="flow-heading-row">
             <h3 class="flow-heading">Optional second value</h3>
@@ -837,23 +845,42 @@ class EnergyFlowCardEditor extends HTMLElement {
     if(picker) picker.value=valid?color:'#ffffff';
   }
 
-  // Wires a color square (input[type=color]) + ha-textfield pair by id suffix
+  // Wires a color square (input[type=color]) + text field pair by id suffix. The text field is a
+  // one-field ha-form: Home Assistant's frontend no longer provides ha-textfield. A complete hex
+  // value is applied right away; any other text (named color, rgb(), var()) when the field loses focus
   _wireColorField(sd,sfx,init,onChange){
     const picker=sd.getElementById('picker-'+sfx);
     const swatch=sd.getElementById('swatch-'+sfx);
-    const tfield=sd.getElementById('tfield-'+sfx);
+    const form=sd.getElementById('tfield-'+sfx);
     this._syncSwatch(swatch,picker,init);
-    if(tfield) tfield.value=init;
+    let pending=null;
+    const flush=()=>{
+      if(pending===null) return;
+      const val=pending; pending=null;
+      onChange(val);
+    };
+    if(form){
+      form.hass=this._hass;
+      form.schema=[{name:'color',label:'Color (e.g. #64B7F6)',selector:{text:{}}}];
+      form.data={color:init};
+      form.computeLabel=s=>s.label??s.name;
+      form.addEventListener('value-changed',ev=>{
+        form.data=ev.detail.value||{};
+        const val=(ev.detail.value?.color||'').trim();
+        this._syncSwatch(swatch,picker,val);
+        if(/^#[0-9a-f]{6}$/i.test(val)){pending=null;onChange(val);}
+        else pending=val;
+      });
+      form.addEventListener('focusout',()=>{
+        setTimeout(()=>{if(pending!==null&&this.shadowRoot.activeElement!==form) flush();},0);
+      });
+    }
     picker?.addEventListener('input',ev=>{
       const hex=ev.target.value;
       this._syncSwatch(swatch,null,hex);
-      if(tfield) tfield.value=hex;
+      pending=null;
+      if(form) form.data={color:hex};
       onChange(hex);
-    });
-    tfield?.addEventListener('change',ev=>{
-      const val=ev.target.value.trim();
-      this._syncSwatch(swatch,picker,val);
-      onChange(val);
     });
   }
 
@@ -990,10 +1017,11 @@ class EnergyFlowCard extends HTMLElement {
     if(!c.entity_sun) return false;
     return this._hass?.states[c.entity_sun]?.state==='below_horizon';
   }
+  // Power in W (mW/kW/MW/GW converted); null when the state is not numeric (unavailable, unknown, missing)
   _watts(eid){
     const st=eid?this._hass?.states[eid]:null;
     const v=parseFloat(st?.state);
-    if(isNaN(v)) return 0;
+    if(isNaN(v)) return null;
     return v*(POWER_SCALE[st.attributes?.unit_of_measurement]??1);
   }
   _fmtW(v){
@@ -1120,20 +1148,22 @@ class EnergyFlowCard extends HTMLElement {
     // Energy values: pills + animations
     const ev=this._getEnergyValues();
     const on=(v,t=15)=>Math.abs(v)>t;
-    const pauseRaw=parseFloat(this._cfg.animation_pause);
-    const pause=Math.max(0,isNaN(pauseRaw)?3.5:pauseRaw);
+    const pause=Math.max(0,toSeconds(this._cfg.animation_pause,3.5));
     let animCss='';
 
     if(this._animEpoch==null)this._animEpoch=performance.now();
     ev.forEach((e,i)=>{
+      // Watts, or null while the source has no numeric value (unavailable, unknown, missing
+      // entity, template error or not yet answered): the pill shows "–", the flow stays off
       let val;
-      if(e.template){const t=parseFloat(this._tplVals['ev'+i]);val=isNaN(t)?0:t;}
+      if(e.template){const t=parseFloat(this._tplVals['ev'+i]);val=isNaN(t)?null:t;}
       else val=this._watts(e.entity);
-      this._set('v-ev-'+i,this._fmtW(val));
+      this._set('v-ev-'+i,val==null?'–':this._fmtW(val));
       this._set('pt-ev-'+i,resolveName(this._hass,e.label,e.entity));
+      const w=val??0;
 
       // Switch path when direction changes (pos ↔ neg)
-      const dir=val>=0?'pos':'neg';
+      const dir=w>=0?'pos':'neg';
       const dirChanged=dir!==this._evDirs[i];
       if(dirChanged){
         this._evDirs[i]=dir;
@@ -1141,21 +1171,20 @@ class EnergyFlowCard extends HTMLElement {
         if(path) sd.querySelectorAll('.lev'+i+' path').forEach(p=>p.setAttribute('d',path));
       }
 
-      const isOn=on(val);
+      const isOn=on(w);
       // Animations-Neustart (Richtungswechsel oder Wiedereinschalten): Der Browser startet
       // die Animation zur Jetzt-Zeit, die konfigurierten Delays staffeln aber nur relativ
       // zum gemeinsamen Start. Delay um die verstrichene Zeit seit Epoch korrigieren →
       // Phase bleibt identisch zu "alle Flows starteten gemeinsam zur Epoch"
       if(isOn&&(dirChanged||!this._evAnimOn[i])){
         const cfgRaw=dir==='pos'?(e.delay_positive||''):(e.delay_negative||e.delay_positive||'');
-        const cfgD=parseFloat(cfgRaw);
-        const base=isNaN(cfgD)?0:cfgD;
+        const base=toSeconds(cfgRaw,0);
         this._evDelayAdj[i]=(base-(performance.now()-this._animEpoch)/1000).toFixed(3)+'s';
       }
       this._evAnimOn[i]=isOn;
 
       if(isOn){
-        const color=val>=0?e.color_positive:(e.color_negative||e.color_positive||'');
+        const color=w>=0?e.color_positive:(e.color_negative||e.color_positive||'');
         animCss+=this._dot('lev'+i,color,this._evDelayAdj[i]||'0s',dir,pause);
       }else{
         animCss+='.lines .lev'+i+' path{stroke:transparent;animation:none;}';
@@ -1254,4 +1283,4 @@ class EnergyFlowCard extends HTMLElement {
 customElements.define('energy-flow-card',EnergyFlowCard);
 window.customCards=window.customCards||[];
 window.customCards.push({type:'energy-flow-card',name:'Energy Flow Card',description:'Animated energy flow with configurable energy value pills'});
-console.info('%c ENERGY-FLOW-CARD %c v1.21.1','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
+console.info('%c ENERGY-FLOW-CARD %c v1.21.2','background:#1976d2;color:#fff;padding:2px 4px;border-radius:3px 0 0 3px','background:#333;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0');
